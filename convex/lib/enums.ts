@@ -1,0 +1,9 @@
+import { v } from "convex/values";
+
+export const personType = v.union(v.literal("hq"), v.literal("network"));
+
+export const networkRole = v.union(
+  v.literal("head"),
+  v.literal("district-manager"),
+  v.literal("area-manager"),
+);

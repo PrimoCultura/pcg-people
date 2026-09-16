@@ -1,26 +1,156 @@
 @import "tailwindcss";
 
+/* React Flow — after Tailwind so utilities can override (Tailwind CSS 4) */
+@import "@xyflow/react/dist/style.css" layer(base);
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand — aligned with PCG (#2E2A70) and welcome-guide language */
+  --pcg-primary: #2e2a70;
+  --pcg-primary-hover: #25225c;
+  --pcg-primary-soft: #eeedf6;
+  --pcg-secondary: #00326d;
+  /* Accent letter G from official PCG wordmark */
+  --pcg-logo-accent: #9a8b7a;
+
+  /* Neutrals */
+  --pcg-bg: #ffffff;
+  --pcg-bg-subtle: #f7f7f9;
+  --pcg-bg-muted: #f0f0f4;
+  --pcg-ink: #14131f;
+  --pcg-text: #1c1b26;
+  --pcg-text-secondary: #5c5a6b;
+  --pcg-text-muted: #7a788a;
+  --pcg-border: #e4e3ea;
+  --pcg-border-strong: #cdcbd8;
+
+  /* Surfaces */
+  --pcg-focus: #2e2a70;
+  --pcg-avatar-bg: #eeedf6;
+  --pcg-avatar-fg: #2e2a70;
+
+  /* Layout tokens */
+  --pcg-radius-sm: 0.25rem;
+  --pcg-radius: 0.375rem;
+  --pcg-radius-lg: 0.75rem;
+  --pcg-max-width: 72rem;
+  --pcg-section-y: clamp(3.5rem, 8vw, 6.5rem);
+  --pcg-gutter: clamp(1.25rem, 4vw, 2rem);
+
+  --background: var(--pcg-bg);
+  --foreground: var(--pcg-text);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-pcg-primary: var(--pcg-primary);
+  --color-pcg-primary-hover: var(--pcg-primary-hover);
+  --color-pcg-primary-soft: var(--pcg-primary-soft);
+  --color-pcg-secondary: var(--pcg-secondary);
+  --color-pcg-bg: var(--pcg-bg);
+  --color-pcg-bg-subtle: var(--pcg-bg-subtle);
+  --color-pcg-bg-muted: var(--pcg-bg-muted);
+  --color-pcg-ink: var(--pcg-ink);
+  --color-pcg-text: var(--pcg-text);
+  --color-pcg-text-secondary: var(--pcg-text-secondary);
+  --color-pcg-text-muted: var(--pcg-text-muted);
+  --color-pcg-border: var(--pcg-border);
+  --color-pcg-border-strong: var(--pcg-border-strong);
+  --color-pcg-focus: var(--pcg-focus);
+  --color-pcg-avatar-bg: var(--pcg-avatar-bg);
+  --color-pcg-avatar-fg: var(--pcg-avatar-fg);
+  --font-sans: var(--font-montserrat);
+  --radius-pcg-sm: var(--pcg-radius-sm);
+  --radius-pcg: var(--pcg-radius);
+  --radius-pcg-lg: var(--pcg-radius-lg);
+  --max-width-pcg: var(--pcg-max-width);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-montserrat), ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--pcg-focus);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--pcg-primary) 18%, white);
+    color: var(--pcg-ink);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Organization chart — keep React Flow chrome minimal and on-brand */
+.pcg-org-flow .react-flow__attribution {
+  font-size: 10px;
+  opacity: 0.55;
+}
+
+.pcg-org-flow .react-flow__node,
+.pcg-org-flow .react-flow__node.draggable,
+.pcg-org-flow .react-flow__node.dragging {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.pcg-org-flow .react-flow__node-person {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.pcg-org-flow .pcg-org-person-node {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.pcg-org-flow .react-flow__pane {
+  cursor: grab;
+}
+
+.pcg-org-flow .react-flow__pane:active {
+  cursor: grabbing;
+}
+
+.pcg-org-flow .react-flow__controls {
+  box-shadow: none;
+  border: 1px solid var(--pcg-border);
+  border-radius: var(--pcg-radius);
+  overflow: hidden;
+}
+
+.pcg-org-flow .react-flow__controls-button {
+  background: var(--pcg-bg);
+  border-bottom: 1px solid var(--pcg-border);
+  fill: var(--pcg-text-secondary);
+  width: 2rem;
+  height: 2rem;
+}
+
+.pcg-org-flow .react-flow__controls-button:hover {
+  background: var(--pcg-bg-subtle);
+}
+
+.pcg-org-flow .react-flow__edge-path {
+  stroke: var(--pcg-border-strong);
+  stroke-width: 1.25;
+}
+
+.pcg-org-flow .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: none;
+  background: transparent;
 }
