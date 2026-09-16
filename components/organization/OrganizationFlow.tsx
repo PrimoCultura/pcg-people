@@ -17,6 +17,7 @@ import { OrganizationFlowProvider } from "@/components/organization/Organization
 import { OrgGroupNode } from "@/components/organization/OrgGroupNode";
 import { PersonOrgNode } from "@/components/organization/PersonOrgNode";
 import type { Clinic } from "@/data/clinic";
+import type { Department } from "@/data/department";
 import { getPersonFullName, type Person } from "@/data/types";
 import { getLayoutedElements } from "@/lib/organizationLayout";
 import {
@@ -37,12 +38,14 @@ type OrganizationFlowProps = {
   mode: OrgMode;
   people: Person[];
   clinics?: Clinic[];
+  departments?: Department[];
 };
 
 function OrganizationFlowInner({
   mode,
   people,
   clinics = [],
+  departments = [],
 }: OrganizationFlowProps) {
   const router = useRouter();
   const { fitView } = useReactFlow();
@@ -52,14 +55,20 @@ function OrganizationFlowInner({
   const [selectedAmId, setSelectedAmId] = useState<string | null>(null);
 
   const { nodes, edges, status, orphans } = useMemo(() => {
-    const graph = buildOrganizationGraph(mode, collapsed, people, clinics);
+    const graph = buildOrganizationGraph(
+      mode,
+      collapsed,
+      people,
+      clinics,
+      departments,
+    );
     const layouted = getLayoutedElements(graph.nodes, graph.edges);
     return {
       ...layouted,
       status: graph.status,
       orphans: graph.orphans,
     };
-  }, [mode, collapsed, people, clinics]);
+  }, [mode, collapsed, people, clinics, departments]);
 
   useEffect(() => {
     if (nodes.length === 0) return;

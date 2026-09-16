@@ -3,17 +3,20 @@
 import { useState } from "react";
 import { OrganizationFlow } from "@/components/organization/OrganizationFlow";
 import type { Clinic } from "@/data/clinic";
+import type { Department } from "@/data/department";
 import type { Person } from "@/data/types";
 import type { OrgMode } from "@/lib/organizationTree";
 
 type OrganizationViewProps = {
   people: Person[];
   clinics?: Clinic[];
+  departments?: Department[];
 };
 
 export function OrganizationView({
   people,
   clinics = [],
+  departments = [],
 }: OrganizationViewProps) {
   const [mode, setMode] = useState<OrgMode>("organization");
 
@@ -47,6 +50,7 @@ export function OrganizationView({
         mode={mode}
         people={people}
         clinics={clinics}
+        departments={departments}
       />
     </div>
   );

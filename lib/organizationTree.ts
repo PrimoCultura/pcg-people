@@ -1,6 +1,8 @@
 import type { Edge, Node } from "@xyflow/react";
 import { getAreaManagerClinics } from "@/data/mockClinics";
+import { mockDepartments } from "@/data/mockDepartments";
 import { mockPeople } from "@/data/mockPeople";
+import type { Department } from "@/data/department";
 import {
   getReportingType,
   isAreaManager,
@@ -31,11 +33,12 @@ export type PersonOrgNodeData = {
   isAreaManager: boolean;
 };
 
-/** Virtual label node — rendering only, never persisted. */
+/** Virtual label / department node — rendering only, never persisted. */
 export type OrgGroupNodeData = {
   label: string;
-  kind: "line" | "staff";
+  kind: "line" | "staff" | "department";
   parentPersonId: string;
+  departmentId?: string;
 };
 
 export type OrgPersonNode = Node<PersonOrgNodeData, "person">;
@@ -51,6 +54,8 @@ function buildChildMap(people: Person[]): Map<string, Person[]> {
   const map = new Map<string, Person[]>();
   for (const person of people) {
     if (!person.managerId) continue;
+    // Never treat a person as their own direct report.
+    if (person.managerId === person.id) continue;
     const list = map.get(person.managerId) ?? [];
     list.push(person);
     map.set(person.managerId, list);
@@ -133,17 +138,12 @@ function findNetworkRoots(people: Person[], idSet: Set<string>): Person[] {
     );
 }
 
-/**
- * Full organization: every person participates in the managerId graph.
- * No filter by type hq/network.
- */
 export function getOrganizationPeople(
   people: Person[] = mockPeople,
 ): Person[] {
   return people;
 }
 
-/** Network zoom: Head / District Manager / Area Manager only. */
 export function getNetworkPeople(people: Person[] = mockPeople): Person[] {
   return people.filter(
     (person) =>
@@ -224,6 +224,7 @@ function collectVisibleIds(
   const visible = new Set<string>();
 
   const visit = (person: Person) => {
+    if (visible.has(person.id)) return; // cycle / duplicate guard
     visible.add(person.id);
     if (collapsed.has(person.id)) return;
     for (const child of childMap.get(person.id) ?? []) {
@@ -249,16 +250,51 @@ function groupNodeId(parentId: string, kind: "line" | "staff"): string {
   return `group-${kind}-${parentId}`;
 }
 
+export function virtualDepartmentNodeId(departmentId: string): string {
+  return `virtual-department-${departmentId}`;
+}
+
+/** Staff label from manager role — never from person name. */
+export function staffGroupLabel(manager: Person): string {
+  const role = manager.role.trim().toLowerCase();
+  if (
+    role.includes("amministratore delegato") ||
+    role.includes("chief executive") ||
+    /(^|[^a-z])ad([^a-z]|$)/.test(role) ||
+    /(^|[^a-z])ceo([^a-z]|$)/.test(role)
+  ) {
+    return "Staff AD";
+  }
+  return "Staff";
+}
+
+function shouldShowVirtualDepartment(
+  manager: Person,
+  department: Department,
+  staffInDept: Person[],
+  lineReports: Person[],
+): boolean {
+  if (department.headId !== manager.id) return false;
+  if (department.id === "network") return false;
+  if (staffInDept.length > 0) return true;
+  // Empty staff function: only for org-root managers (e.g. AD heading Cultura)
+  // so normal directors don't get an empty Staff column.
+  if (!manager.isOrgRoot) return false;
+  const lineInDept = lineReports.some((p) => p.departmentId === department.id);
+  return !lineInDept;
+}
+
 /**
  * Builds React Flow nodes/edges from managerId.
- * When a manager has staff reports, inserts virtual group labels
- * (Direzioni / Staff) for layout only — never persisted.
+ * Virtual group/department labels are layout-only — never persisted.
+ * Each person id appears at most once as a person node.
  */
 export function buildOrganizationGraph(
   mode: OrgMode,
   collapsed: Set<string>,
   people: Person[] = mockPeople,
   clinics: ClinicLike[] = [],
+  departments: Department[] = mockDepartments,
 ): {
   nodes: OrgChartNode[];
   edges: Edge[];
@@ -281,10 +317,15 @@ export function buildOrganizationGraph(
   };
 
   const nodes: OrgChartNode[] = [];
+  const personNodeIds = new Set<string>();
+
   for (const id of visibleIds) {
+    if (personNodeIds.has(id)) continue;
     const person = byId.get(id);
     if (!person) continue;
-    const children = childMap.get(id) ?? [];
+    personNodeIds.add(id);
+
+    const children = (childMap.get(id) ?? []).filter((c) => c.id !== id);
     const hasChildren = children.length > 0;
     const clinicCount = isAreaManager(person)
       ? clinicCountFor(person.id)
@@ -311,7 +352,23 @@ export function buildOrganizationGraph(
   }
 
   const edges: Edge[] = [];
-  const groupIdsAdded = new Set<string>();
+  const virtualIdsAdded = new Set<string>();
+  const edgeIds = new Set<string>();
+
+  const pushEdge = (source: string, target: string) => {
+    const id = `e-${source}-${target}`;
+    if (edgeIds.has(id)) return;
+    // Never point a person edge at a duplicate person target twice from different paths
+    // for the same logical attach — edge id already unique per pair.
+    edgeIds.add(id);
+    edges.push({
+      id,
+      source,
+      target,
+      type: "smoothstep",
+      animated: false,
+    });
+  };
 
   const addGroupNode = (
     parentId: string,
@@ -319,8 +376,8 @@ export function buildOrganizationGraph(
     label: string,
   ) => {
     const id = groupNodeId(parentId, kind);
-    if (groupIdsAdded.has(id)) return id;
-    groupIdsAdded.add(id);
+    if (virtualIdsAdded.has(id)) return id;
+    virtualIdsAdded.add(id);
     nodes.push({
       id,
       type: "group",
@@ -336,69 +393,109 @@ export function buildOrganizationGraph(
     return id;
   };
 
-  // Attach visible children under each visible, expanded manager.
+  const addDepartmentNode = (
+    parentPersonId: string,
+    department: Department,
+  ) => {
+    const id = virtualDepartmentNodeId(department.id);
+    if (virtualIdsAdded.has(id)) return id;
+    virtualIdsAdded.add(id);
+    nodes.push({
+      id,
+      type: "group",
+      position: { x: 0, y: 0 },
+      selectable: false,
+      draggable: false,
+      data: {
+        label: department.name,
+        kind: "department",
+        parentPersonId,
+        departmentId: department.id,
+      },
+    });
+    return id;
+  };
+
   for (const managerId of visibleIds) {
     if (collapsed.has(managerId)) continue;
     if (!idSet.has(managerId)) continue;
 
-    const children = (childMap.get(managerId) ?? []).filter((c) =>
-      visibleIds.has(c.id),
+    const manager = byId.get(managerId);
+    if (!manager) continue;
+
+    const children = (childMap.get(managerId) ?? []).filter(
+      (c) => visibleIds.has(c.id) && c.id !== managerId && personNodeIds.has(c.id),
     );
-    if (children.length === 0) continue;
 
     const { lineReports, staffReports } = splitReports(children);
 
-    if (staffReports.length === 0) {
+    const headedDepts = departments.filter((d) =>
+      shouldShowVirtualDepartment(
+        manager,
+        d,
+        staffReports.filter((p) => p.departmentId === d.id),
+        lineReports,
+      ),
+    );
+
+    const showStaffBlock =
+      staffReports.length > 0 || headedDepts.length > 0;
+
+    // Line branch — no virtual group when there is no staff side.
+    if (!showStaffBlock) {
       for (const child of lineReports) {
-        edges.push({
-          id: `e-${managerId}-${child.id}`,
-          source: managerId,
-          target: child.id,
-          type: "smoothstep",
-          animated: false,
-        });
+        pushEdge(managerId, child.id);
       }
       continue;
     }
 
     if (lineReports.length > 0) {
-      const lineGroupId = addGroupNode(managerId, "line", "Direzioni");
-      edges.push({
-        id: `e-${managerId}-${lineGroupId}`,
-        source: managerId,
-        target: lineGroupId,
-        type: "smoothstep",
-        animated: false,
-      });
+      const lineGroupId = addGroupNode(
+        managerId,
+        "line",
+        "Linea gerarchica",
+      );
+      pushEdge(managerId, lineGroupId);
       for (const child of lineReports) {
-        edges.push({
-          id: `e-${lineGroupId}-${child.id}`,
-          source: lineGroupId,
-          target: child.id,
-          type: "smoothstep",
-          animated: false,
-        });
+        pushEdge(lineGroupId, child.id);
       }
     }
 
-    const staffGroupId = addGroupNode(managerId, "staff", "Staff");
-    edges.push({
-      id: `e-${managerId}-${staffGroupId}`,
-      source: managerId,
-      target: staffGroupId,
-      type: "smoothstep",
-      animated: false,
-    });
-    for (const child of staffReports) {
-      edges.push({
-        id: `e-${staffGroupId}-${child.id}`,
-        source: staffGroupId,
-        target: child.id,
-        type: "smoothstep",
-        animated: false,
-      });
+    const staffGroupId = addGroupNode(
+      managerId,
+      "staff",
+      staffGroupLabel(manager),
+    );
+    pushEdge(managerId, staffGroupId);
+
+    const staffPlaced = new Set<string>();
+
+    for (const dept of headedDepts) {
+      const deptNodeId = addDepartmentNode(managerId, dept);
+      pushEdge(staffGroupId, deptNodeId);
+      for (const person of staffReports) {
+        if (person.departmentId !== dept.id) continue;
+        if (person.id === managerId) continue;
+        pushEdge(deptNodeId, person.id);
+        staffPlaced.add(person.id);
+      }
+    }
+
+    for (const person of staffReports) {
+      if (staffPlaced.has(person.id)) continue;
+      if (person.id === managerId) continue;
+      pushEdge(staffGroupId, person.id);
     }
   }
 
-  return { nodes, edges, status, orphans };
+  // Final uniqueness assertion for person nodes
+  const seenPerson = new Set<string>();
+  const uniqueNodes = nodes.filter((node) => {
+    if (node.type !== "person") return true;
+    if (seenPerson.has(node.id)) return false;
+    seenPerson.add(node.id);
+    return true;
+  });
+
+  return { nodes: uniqueNodes, edges, status, orphans };
 }

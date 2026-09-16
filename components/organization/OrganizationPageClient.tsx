@@ -9,14 +9,21 @@ import {
 
 export function OrganizationPageClient() {
   if (!isConvexConfigured()) {
-    const { people, clinics } = getMockOrganizationBundle();
-    return <OrganizationView people={people} clinics={clinics} />;
+    const { people, clinics, departments } = getMockOrganizationBundle();
+    return (
+      <OrganizationView
+        people={people}
+        clinics={clinics}
+        departments={departments}
+      />
+    );
   }
   return <OrganizationFromConvex />;
 }
 
 function OrganizationFromConvex() {
-  const { status, people, clinics } = useConvexOrganizationBundle();
+  const { status, people, clinics, departments } =
+    useConvexOrganizationBundle();
 
   if (status === "loading") {
     return (
@@ -26,5 +33,11 @@ function OrganizationFromConvex() {
     );
   }
 
-  return <OrganizationView people={people} clinics={clinics} />;
+  return (
+    <OrganizationView
+      people={people}
+      clinics={clinics}
+      departments={departments}
+    />
+  );
 }
