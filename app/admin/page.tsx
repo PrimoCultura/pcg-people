@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useQuery } from "convex/react";
+import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { AdminGateMessage } from "@/components/admin/AdminGateMessage";
+import { DatabaseManagementSection } from "@/components/admin/DatabaseManagementSection";
 import { isConvexConfigured } from "@/components/providers/ConvexClientProvider";
 import { mapConvexPerson, type ConvexPersonDoc } from "@/lib/mappers";
 import { getPersonFullName } from "@/data/types";
@@ -14,6 +16,7 @@ export default function AdminDashboardPage() {
 }
 
 function AdminDashboardBody() {
+  const router = useRouter();
   const overview = useQuery(api.diagnostics.getAdminOverview);
 
   if (overview === undefined) {
@@ -166,6 +169,12 @@ function AdminDashboardBody() {
           </div>
         )}
       </section>
+
+      <DatabaseManagementSection
+        onPurged={() => {
+          router.refresh();
+        }}
+      />
     </div>
   );
 }

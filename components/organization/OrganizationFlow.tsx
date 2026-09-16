@@ -170,11 +170,17 @@ function OrganizationFlowInner({
               </div>
             </div>
           </>
-        ) : isOrgView && status === "ok" ? (
+        ) : (
           <p className="text-sm text-pcg-text-secondary">
-            Nessuna persona da visualizzare nell’organigramma.
+            {isOrgView && status === "missing"
+              ? people.length === 0
+                ? "Nessuna persona nell’organigramma. Aggiungi persone dall’area Admin."
+                : "Vertice dell’organigramma non configurato: non è possibile disegnare la struttura."
+              : isOrgView && status === "multiple"
+                ? "Più vertici configurati: correggi i dati prima di visualizzare l’organigramma."
+                : "Nessuna persona da visualizzare nell’organigramma."}
           </p>
-        ) : null}
+        )}
 
         {isOrgView && orphans.length > 0 ? (
           <IncompleteOrgData people={orphans} />

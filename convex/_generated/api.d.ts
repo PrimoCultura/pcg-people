@@ -8,10 +8,12 @@
  * @module
  */
 
+import type * as adminDatabase from "../adminDatabase.js";
 import type * as clinics from "../clinics.js";
 import type * as departments from "../departments.js";
 import type * as diagnostics from "../diagnostics.js";
 import type * as districts from "../districts.js";
+import type * as lib_adminGuard from "../lib/adminGuard.js";
 import type * as lib_enums from "../lib/enums.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as people from "../people.js";
@@ -24,10 +26,12 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  adminDatabase: typeof adminDatabase;
   clinics: typeof clinics;
   departments: typeof departments;
   diagnostics: typeof diagnostics;
   districts: typeof districts;
+  "lib/adminGuard": typeof lib_adminGuard;
   "lib/enums": typeof lib_enums;
   "lib/validators": typeof lib_validators;
   people: typeof people;
