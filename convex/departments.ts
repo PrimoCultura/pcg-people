@@ -27,9 +27,16 @@ export const listHq = query({
       .query("departments")
       .withIndex("by_active", (q) => q.eq("active", true))
       .collect();
+    // All active departments except the special Network bucket.
+    // Order is optional — missing order sorts last (by name as tiebreaker).
     return departments
-      .filter((d) => typeof d.order === "number" && d.slug !== "network")
-      .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+      .filter((d) => d.slug !== "network")
+      .sort((a, b) => {
+        const ao = a.order ?? Number.POSITIVE_INFINITY;
+        const bo = b.order ?? Number.POSITIVE_INFINITY;
+        if (ao !== bo) return ao - bo;
+        return a.name.localeCompare(b.name, "it");
+      });
   },
 });
 
@@ -106,6 +113,16 @@ export const create = mutation({
     if (existing) userError("Esiste già un dipartimento con questo slug.");
     await assertDepartmentHead(ctx, args.headId);
     const timestamp = now();
+    let order = args.order;
+    if (order === undefined) {
+      const all = await ctx.db.query("departments").collect();
+      const maxOrder = all.reduce(
+        (max, d) =>
+          typeof d.order === "number" && d.order > max ? d.order : max,
+        0,
+      );
+      order = maxOrder + 1;
+    }
     return await ctx.db.insert("departments", {
       name: args.name,
       slug,
@@ -114,7 +131,7 @@ export const create = mutation({
       headId: args.headId,
       contactFor: args.contactFor,
       tags: args.tags,
-      order: args.order,
+      order,
       active: args.active ?? true,
       createdAt: timestamp,
       updatedAt: timestamp,

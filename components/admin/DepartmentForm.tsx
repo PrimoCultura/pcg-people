@@ -212,12 +212,13 @@ export function DepartmentForm({
         onChange={(v) => set("tags", v)}
       />
       <label className="block text-sm font-medium">
-        Ordine
+        Ordine (opzionale — posizione in elenco pubblico)
         <input
           type="number"
           className={inputClass}
           value={state.order}
           onChange={(e) => set("order", e.target.value)}
+          placeholder="Assegnato automaticamente se vuoto"
         />
       </label>
       <label className="flex items-center gap-2 text-sm">
