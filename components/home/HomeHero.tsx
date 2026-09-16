@@ -16,11 +16,10 @@ export function HomeHero({ people }: HomeHeroProps) {
             Persone · Ruoli · Contatti
           </p>
           <h1 className="text-[clamp(1.75rem,3.8vw,2.75rem)] font-semibold leading-[1.12] tracking-tight text-pcg-ink">
-            Scopri chi fa cosa.
+            Le persone di PCG
           </h1>
           <p className="mt-3 max-w-xl text-base leading-relaxed text-pcg-text-secondary">
-            Cerca direttamente una persona oppure esplora l’organigramma per
-            orientarti in PCG.
+            Scopri chi siamo, cosa facciamo e come siamo organizzati.
           </p>
         </div>
 
