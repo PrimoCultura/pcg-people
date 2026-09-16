@@ -54,7 +54,7 @@ function PersonOrgNodeComponent({ data }: NodeProps) {
           </span>
         </div>
 
-        {node.hasChildren ? (
+        {node.canCollapse ? (
           <button
             type="button"
             className="nodrag nopan inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center self-start rounded-pcg border border-pcg-border text-sm text-pcg-primary hover:bg-pcg-bg-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pcg-focus"

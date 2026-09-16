@@ -30,6 +30,8 @@ export type PersonOrgNodeData = {
   clinicCount?: number;
   hasChildren: boolean;
   isExpanded: boolean;
+  /** False for diagram roots — first line (incl. Staff) stays always visible. */
+  canCollapse: boolean;
   isAreaManager: boolean;
 };
 
@@ -194,9 +196,11 @@ export function getDefaultCollapsedIds(
   const rootIds = new Set(roots.map((r) => r.id));
   const collapsed = new Set<string>();
 
+  // Never collapse diagram roots — first-level line + staff must stay visible.
   for (const person of scoped) {
+    if (rootIds.has(person.id)) continue;
     const children = childMap.get(person.id) ?? [];
-    if (children.length > 0 && !rootIds.has(person.id)) {
+    if (children.length > 0) {
       collapsed.add(person.id);
     }
   }
@@ -208,25 +212,33 @@ export function getAllCollapsibleIds(
   mode: OrgMode,
   people: Person[] = mockPeople,
 ): Set<string> {
-  const childMap = getChildMapForMode(mode, people);
+  const scoped = getPeopleForMode(mode, people);
+  const childMap = buildChildMap(scoped);
+  const { roots } = getDiagramRoots(mode, scoped, people);
+  const rootIds = new Set(roots.map((r) => r.id));
   const ids = new Set<string>();
   for (const [id, children] of childMap) {
-    if (children.length > 0) ids.add(id);
+    if (children.length > 0 && !rootIds.has(id)) ids.add(id);
   }
   return ids;
 }
 
+/**
+ * Walk the managerId tree. Diagram roots are always treated as expanded so
+ * their first-level line + staff reports are always in the visible set.
+ */
 function collectVisibleIds(
   roots: Person[],
   childMap: Map<string, Person[]>,
   collapsed: Set<string>,
 ): Set<string> {
+  const rootIds = new Set(roots.map((r) => r.id));
   const visible = new Set<string>();
 
   const visit = (person: Person) => {
-    if (visible.has(person.id)) return; // cycle / duplicate guard
+    if (visible.has(person.id)) return;
     visible.add(person.id);
-    if (collapsed.has(person.id)) return;
+    if (collapsed.has(person.id) && !rootIds.has(person.id)) return;
     for (const child of childMap.get(person.id) ?? []) {
       visit(child);
     }
@@ -306,7 +318,12 @@ export function buildOrganizationGraph(
   const childMap = buildChildMap(scoped);
   const { roots, status } = getDiagramRoots(mode, scoped, people);
   const orphans = mode === "organization" ? getOrgOrphans(people) : [];
-  const visibleIds = collectVisibleIds(roots, childMap, collapsed);
+  const rootIds = new Set(roots.map((r) => r.id));
+  // Roots are never effectively collapsed — strip them from the set used for visibility.
+  const effectiveCollapsed = new Set(
+    [...collapsed].filter((id) => !rootIds.has(id)),
+  );
+  const visibleIds = collectVisibleIds(roots, childMap, effectiveCollapsed);
   const byId = new Map(scoped.map((p) => [p.id, p]));
 
   const clinicCountFor = (personId: string) => {
@@ -327,6 +344,8 @@ export function buildOrganizationGraph(
 
     const children = (childMap.get(id) ?? []).filter((c) => c.id !== id);
     const hasChildren = children.length > 0;
+    const isRoot = rootIds.has(id);
+    const canCollapse = hasChildren && !isRoot;
     const clinicCount = isAreaManager(person)
       ? clinicCountFor(person.id)
       : undefined;
@@ -345,7 +364,12 @@ export function buildOrganizationGraph(
         metaLabel: metaLabelFor(person, mode),
         clinicCount,
         hasChildren,
-        isExpanded: hasChildren ? !collapsed.has(person.id) : false,
+        canCollapse,
+        isExpanded: isRoot
+          ? true
+          : hasChildren
+            ? !effectiveCollapsed.has(person.id)
+            : false,
         isAreaManager: isAreaManager(person),
       },
     });
@@ -417,7 +441,8 @@ export function buildOrganizationGraph(
   };
 
   for (const managerId of visibleIds) {
-    if (collapsed.has(managerId)) continue;
+    // Roots always emit first-level line + staff edges.
+    if (effectiveCollapsed.has(managerId) && !rootIds.has(managerId)) continue;
     if (!idSet.has(managerId)) continue;
 
     const manager = byId.get(managerId);

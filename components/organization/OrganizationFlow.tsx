@@ -49,9 +49,14 @@ function OrganizationFlowInner({
 }: OrganizationFlowProps) {
   const router = useRouter();
   const { fitView } = useReactFlow();
-  const [collapsed, setCollapsed] = useState<Set<string>>(() =>
-    getDefaultCollapsedIds(mode, people),
+  const defaultCollapsed = useMemo(
+    () => getDefaultCollapsedIds(mode, people),
+    [mode, people],
   );
+  const [collapsedOverride, setCollapsedOverride] = useState<Set<string> | null>(
+    null,
+  );
+  const collapsed = collapsedOverride ?? defaultCollapsed;
   const [selectedAmId, setSelectedAmId] = useState<string | null>(null);
 
   const { nodes, edges, status, orphans } = useMemo(() => {
@@ -78,21 +83,27 @@ function OrganizationFlowInner({
     return () => cancelAnimationFrame(frame);
   }, [nodes, edges, fitView]);
 
-  const toggleExpand = useCallback((personId: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(personId)) next.delete(personId);
-      else next.add(personId);
-      return next;
-    });
-  }, []);
+  const toggleExpand = useCallback(
+    (personId: string) => {
+      const collapsible = getAllCollapsibleIds(mode, people);
+      if (!collapsible.has(personId)) return;
+      setCollapsedOverride((prev) => {
+        const base = prev ?? defaultCollapsed;
+        const next = new Set(base);
+        if (next.has(personId)) next.delete(personId);
+        else next.add(personId);
+        return next;
+      });
+    },
+    [mode, people, defaultCollapsed],
+  );
 
   const expandAll = useCallback(() => {
-    setCollapsed(new Set());
+    setCollapsedOverride(new Set());
   }, []);
 
   const collapseAll = useCallback(() => {
-    setCollapsed(getAllCollapsibleIds(mode, people));
+    setCollapsedOverride(getAllCollapsibleIds(mode, people));
   }, [mode, people]);
 
   const openAreaManager = useCallback((personId: string) => {
