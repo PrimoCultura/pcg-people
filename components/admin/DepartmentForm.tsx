@@ -102,7 +102,7 @@ export function DepartmentForm({
     key: K,
     value: DeptFormState[K],
   ) => {
-    setForm({ ...state, [key]: value });
+    setForm({ ...state, [key]: value } as DeptFormState);
     setMessage(null);
     setError(null);
   };
@@ -121,7 +121,9 @@ export function DepartmentForm({
         contactFor: state.contactFor,
         tags: state.tags,
         order: state.order ? Number(state.order) : undefined,
-        organizationalPlacement: state.organizationalPlacement,
+        organizationalPlacement: state.organizationalPlacement as
+          | "line"
+          | "staff",
         active: departmentId ? state.active : (state.active ?? true),
       };
       if (departmentId) {
