@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { organizationalPlacement } from "./lib/enums";
 import {
   assertDepartmentHead,
   now,
@@ -102,6 +103,7 @@ export const create = mutation({
     contactFor: v.array(v.string()),
     tags: v.array(v.string()),
     order: v.optional(v.number()),
+    organizationalPlacement: v.optional(organizationalPlacement),
     active: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -132,6 +134,7 @@ export const create = mutation({
       contactFor: args.contactFor,
       tags: args.tags,
       order,
+      organizationalPlacement: args.organizationalPlacement,
       active: args.active ?? true,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -150,6 +153,7 @@ export const update = mutation({
     contactFor: v.array(v.string()),
     tags: v.array(v.string()),
     order: v.optional(v.number()),
+    organizationalPlacement: v.optional(organizationalPlacement),
     active: v.boolean(),
   },
   handler: async (ctx, args) => {
