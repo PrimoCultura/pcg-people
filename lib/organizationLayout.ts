@@ -4,11 +4,11 @@ import { graphlib, layout as dagreLayout } from "@dagrejs/dagre";
 
 const PERSON_NODE_WIDTH = 220;
 const PERSON_NODE_HEIGHT = 112;
-const GROUP_NODE_WIDTH = 160;
-const GROUP_NODE_HEIGHT = 36;
-const DEPT_NODE_WIDTH = 140;
-const DEPT_NODE_HEIGHT = 32;
-const STAFF_LATERAL_GAP = 48;
+const STAFF_LABEL_WIDTH = 120;
+const STAFF_LABEL_HEIGHT = 22;
+const DEPT_NODE_WIDTH = 180;
+const DEPT_NODE_HEIGHT = 64;
+const BAND_GAP = 56;
 
 export type LayoutOptions = {
   direction?: "TB" | "LR";
@@ -18,19 +18,15 @@ export type LayoutOptions = {
 
 function sizeForNode(node: Node): { width: number; height: number } {
   if (node.type === "group") {
-    const kind = (node.data as { kind?: string } | undefined)?.kind;
-    if (kind === "department") {
-      return { width: DEPT_NODE_WIDTH, height: DEPT_NODE_HEIGHT };
-    }
-    return { width: GROUP_NODE_WIDTH, height: GROUP_NODE_HEIGHT };
+    return { width: STAFF_LABEL_WIDTH, height: STAFF_LABEL_HEIGHT };
+  }
+  if (node.type === "department") {
+    return { width: DEPT_NODE_WIDTH, height: DEPT_NODE_HEIGHT };
   }
   return { width: PERSON_NODE_WIDTH, height: PERSON_NODE_HEIGHT };
 }
 
-function collectDescendants(
-  rootId: string,
-  edges: Edge[],
-): Set<string> {
+function collectDescendants(rootId: string, edges: Edge[]): Set<string> {
   const children = new Map<string, string[]>();
   for (const edge of edges) {
     const list = children.get(edge.source) ?? [];
@@ -43,91 +39,86 @@ function collectDescendants(
     const id = stack.pop()!;
     if (out.has(id)) continue;
     out.add(id);
-    for (const child of children.get(id) ?? []) {
-      stack.push(child);
-    }
+    for (const child of children.get(id) ?? []) stack.push(child);
   }
   return out;
 }
 
 /**
- * Shift each Staff branch to the right of the manager's line branch
- * so Staff reads as a secondary, lateral column.
+ * After Dagre, push each manager's line-report subtree below their Staff band
+ * so the visual order is: Manager → Staff AD → Directors.
  */
-function applyStaffLateralOffset<N extends Node, E extends Edge>(
+function stackLineBelowStaffBand<N extends Node, E extends Edge>(
   nodes: N[],
   edges: E[],
 ): N[] {
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const shifted = new Map<string, number>();
+  const yShift = new Map<string, number>();
 
   for (const node of nodes) {
     if (node.type !== "group") continue;
     const data = node.data as { kind?: string; parentPersonId?: string };
-    if (data.kind !== "staff" || !data.parentPersonId) continue;
+    if (data.kind !== "group" || !data.parentPersonId) continue;
 
     const staffIds = collectDescendants(node.id, edges);
-    const lineGroupId = `group-line-${data.parentPersonId}`;
-    const lineIds = byId.has(lineGroupId)
-      ? collectDescendants(lineGroupId, edges)
-      : new Set<string>();
+    let staffMaxBottom = -Infinity;
+    for (const id of staffIds) {
+      const n = byId.get(id);
+      if (!n) continue;
+      const { height } = sizeForNode(n);
+      staffMaxBottom = Math.max(staffMaxBottom, n.position.y + height);
+    }
+    if (!Number.isFinite(staffMaxBottom)) continue;
 
-    let lineMaxRight = -Infinity;
+    const managerId = data.parentPersonId;
+    const lineRoots: string[] = [];
+    for (const edge of edges) {
+      if (edge.source !== managerId) continue;
+      if (edge.target === node.id) continue;
+      // Direct child of manager that is not the staff label = line report root
+      lineRoots.push(edge.target);
+    }
+
+    const lineIds = new Set<string>();
+    for (const root of lineRoots) {
+      for (const id of collectDescendants(root, edges)) {
+        if (!staffIds.has(id)) lineIds.add(id);
+      }
+    }
+    if (lineIds.size === 0) continue;
+
+    let lineMinTop = Infinity;
     for (const id of lineIds) {
       const n = byId.get(id);
       if (!n) continue;
-      const { width } = sizeForNode(n);
-      lineMaxRight = Math.max(lineMaxRight, n.position.x + width);
+      lineMinTop = Math.min(lineMinTop, n.position.y);
     }
+    if (!Number.isFinite(lineMinTop)) continue;
 
-    let staffMinLeft = Infinity;
-    for (const id of staffIds) {
-      const n = byId.get(id);
-      if (!n) continue;
-      staffMinLeft = Math.min(staffMinLeft, n.position.x);
-    }
-
-    if (!Number.isFinite(lineMaxRight) || !Number.isFinite(staffMinLeft)) {
-      // No line branch — nudge staff slightly right of the manager.
-      const manager = byId.get(data.parentPersonId);
-      if (!manager) continue;
-      const managerRight = manager.position.x + sizeForNode(manager).width;
-      const delta = managerRight + STAFF_LATERAL_GAP - staffMinLeft;
-      if (delta > 0) {
-        for (const id of staffIds) {
-          shifted.set(id, (shifted.get(id) ?? 0) + delta);
-        }
-      }
-      continue;
-    }
-
-    const desiredLeft = lineMaxRight + STAFF_LATERAL_GAP;
-    const delta = desiredLeft - staffMinLeft;
+    const desiredTop = staffMaxBottom + BAND_GAP;
+    const delta = desiredTop - lineMinTop;
     if (delta <= 0) continue;
-    for (const id of staffIds) {
-      shifted.set(id, (shifted.get(id) ?? 0) + delta);
+
+    for (const id of lineIds) {
+      yShift.set(id, (yShift.get(id) ?? 0) + delta);
     }
   }
 
-  if (shifted.size === 0) return nodes;
+  if (yShift.size === 0) return nodes;
 
   return nodes.map((node) => {
-    const dx = shifted.get(node.id);
-    if (!dx) return node;
+    const dy = yShift.get(node.id);
+    if (!dy) return node;
     return {
       ...node,
       position: {
         ...node.position,
-        x: node.position.x + dx,
+        y: node.position.y + dy,
       },
     };
   });
 }
 
-/**
- * Positions nodes with Dagre (top-to-bottom by default), then nudges
- * Staff branches laterally so they don't compete with the main line.
- */
 export function getLayoutedElements<
   N extends Node = Node,
   E extends Edge = Edge,
@@ -143,7 +134,7 @@ export function getLayoutedElements<
   graph.setGraph({
     rankdir: direction,
     nodesep: options.nodesep ?? 40,
-    ranksep: options.ranksep ?? 64,
+    ranksep: options.ranksep ?? 56,
     marginx: 24,
     marginy: 24,
   });
@@ -173,9 +164,10 @@ export function getLayoutedElements<
     };
   });
 
-  const withStaffOffset = applyStaffLateralOffset(layoutedNodes, edges);
-
-  return { nodes: withStaffOffset, edges };
+  return {
+    nodes: stackLineBelowStaffBand(layoutedNodes, edges),
+    edges,
+  };
 }
 
 export const ORG_NODE_WIDTH = PERSON_NODE_WIDTH;

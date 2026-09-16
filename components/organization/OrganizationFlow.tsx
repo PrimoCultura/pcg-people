@@ -14,6 +14,7 @@ import {
 import { AreaManagerDetails } from "@/components/organization/AreaManagerDetails";
 import { OrganizationControls } from "@/components/organization/OrganizationControls";
 import { OrganizationFlowProvider } from "@/components/organization/OrganizationFlowContext";
+import { OrgDepartmentNode } from "@/components/organization/OrgDepartmentNode";
 import { OrgGroupNode } from "@/components/organization/OrgGroupNode";
 import { PersonOrgNode } from "@/components/organization/PersonOrgNode";
 import type { Clinic } from "@/data/clinic";
@@ -24,6 +25,7 @@ import {
   buildOrganizationGraph,
   getAllCollapsibleIds,
   getDefaultCollapsedIds,
+  type OrgDepartmentNodeData,
   type OrgMode,
   type OrgRootStatus,
   type PersonOrgNodeData,
@@ -32,6 +34,7 @@ import {
 const nodeTypes = {
   person: PersonOrgNode,
   group: OrgGroupNode,
+  department: OrgDepartmentNode,
 } satisfies NodeTypes;
 
 type OrganizationFlowProps = {
@@ -119,12 +122,21 @@ function OrganizationFlowInner({
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_event, node: Node) => {
-      if (node.type === "group") return;
-      const data = node.data as PersonOrgNodeData;
-      if (!data?.personId) return;
-      openProfile(data.personId);
+      const kind = (node.data as { kind?: string } | undefined)?.kind;
+      if (kind === "group") return;
+      if (kind === "department") {
+        const data = node.data as OrgDepartmentNodeData;
+        if (!data.departmentId) return;
+        router.push(`/dipartimenti/${data.departmentId}`);
+        return;
+      }
+      if (kind === "person" || node.type === "person") {
+        const data = node.data as PersonOrgNodeData;
+        if (!data?.personId) return;
+        router.push(`/persone/${data.personId}`);
+      }
     },
-    [openProfile],
+    [router],
   );
 
   const actions = useMemo(

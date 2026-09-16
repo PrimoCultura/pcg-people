@@ -78,6 +78,7 @@ export const mockDepartments: Department[] = [
     ],
     tags: ["cultura", "formazione", "academy", "engagement"],
     order: 4,
+    organizationalPlacement: "staff",
   },
   {
     id: "operations",

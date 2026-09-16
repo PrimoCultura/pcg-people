@@ -44,6 +44,7 @@ export type ConvexDepartmentDoc = {
   contactFor: string[];
   tags: string[];
   order?: number;
+  organizationalPlacement?: "line" | "staff";
   active: boolean;
 };
 
@@ -107,6 +108,7 @@ export function mapConvexDepartment(doc: ConvexDepartmentDoc) {
     contactFor: doc.contactFor,
     tags: doc.tags,
     order: doc.order,
+    organizationalPlacement: doc.organizationalPlacement,
   };
 }
 

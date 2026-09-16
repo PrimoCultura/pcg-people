@@ -1,7 +1,9 @@
 /**
- * Department entity — shaped for a future Convex schema.
+ * Department entity — shaped for Convex schema.
  * Members are derived from Person.departmentId, never duplicated here.
  */
+export type DepartmentOrganizationalPlacement = "line" | "staff";
+
 export type Department = {
   id: string;
   name: string;
@@ -13,4 +15,15 @@ export type Department = {
   tags: string[];
   /** Sort order for HQ directory; omit for non-HQ (e.g. Network) */
   order?: number;
+  /**
+   * How the department sits under its head in the org chart.
+   * Absent or "line" = normal; "staff" = Staff band under the head.
+   */
+  organizationalPlacement?: DepartmentOrganizationalPlacement;
 };
+
+export function getDepartmentOrganizationalPlacement(
+  department: Pick<Department, "organizationalPlacement">,
+): DepartmentOrganizationalPlacement {
+  return department.organizationalPlacement === "staff" ? "staff" : "line";
+}

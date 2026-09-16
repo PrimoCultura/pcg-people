@@ -19,6 +19,7 @@ type DeptFormState = {
   contactFor: string[];
   tags: string[];
   order: string;
+  organizationalPlacement: "line" | "staff";
   active: boolean;
 };
 
@@ -50,6 +51,7 @@ export function DepartmentForm({
           contactFor: [],
           tags: [],
           order: "",
+          organizationalPlacement: "line",
           active: true,
         },
   );
@@ -70,6 +72,8 @@ export function DepartmentForm({
         contactFor: existing.contactFor,
         tags: existing.tags,
         order: existing.order?.toString() ?? "",
+        organizationalPlacement:
+          existing.organizationalPlacement === "staff" ? "staff" : "line",
         active: existing.active,
       };
     }
@@ -82,6 +86,7 @@ export function DepartmentForm({
       contactFor: [] as string[],
       tags: [] as string[],
       order: "",
+      organizationalPlacement: "line" as const,
       active: true,
     };
   }, [form, departmentId, existing]);
@@ -116,6 +121,7 @@ export function DepartmentForm({
         contactFor: state.contactFor,
         tags: state.tags,
         order: state.order ? Number(state.order) : undefined,
+        organizationalPlacement: state.organizationalPlacement,
         active: departmentId ? state.active : (state.active ?? true),
       };
       if (departmentId) {
@@ -211,6 +217,27 @@ export function DepartmentForm({
         values={state.tags}
         onChange={(v) => set("tags", v)}
       />
+      <label className="block text-sm font-medium">
+        Collocazione organizzativa
+        <select
+          className={inputClass}
+          value={state.organizationalPlacement}
+          onChange={(e) =>
+            set(
+              "organizationalPlacement",
+              e.target.value as DeptFormState["organizationalPlacement"],
+            )
+          }
+        >
+          <option value="line">Linea gerarchica</option>
+          <option value="staff">Staff del responsabile</option>
+        </select>
+      </label>
+      <p className="text-xs leading-relaxed text-pcg-text-muted">
+        Usa &quot;Staff del responsabile&quot; per funzioni (es. Cultura) che
+        riportano direttamente al responsabile ma non sono una direzione di
+        linea.
+      </p>
       <label className="block text-sm font-medium">
         Ordine (opzionale — posizione in elenco pubblico)
         <input

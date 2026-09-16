@@ -10,3 +10,9 @@ export const networkRole = v.union(
 
 /** Organizational placement vs manager — absent means line. */
 export const reportingType = v.union(v.literal("line"), v.literal("staff"));
+
+/** Department placement in the org chart — absent means line. */
+export const organizationalPlacement = v.union(
+  v.literal("line"),
+  v.literal("staff"),
+);

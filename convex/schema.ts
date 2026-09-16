@@ -1,6 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { networkRole, personType, reportingType } from "./lib/enums";
+import { networkRole, organizationalPlacement, personType, reportingType } from "./lib/enums";
 
 export default defineSchema({
   people: defineTable({
@@ -44,6 +44,8 @@ export default defineSchema({
     contactFor: v.array(v.string()),
     tags: v.array(v.string()),
     order: v.optional(v.number()),
+    /** Absent = line. Staff depts appear in the manager's Staff band. */
+    organizationalPlacement: v.optional(organizationalPlacement),
     active: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
