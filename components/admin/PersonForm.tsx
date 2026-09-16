@@ -13,7 +13,7 @@ import {
   type ConvexPersonDoc,
 } from "@/lib/mappers";
 import { getPersonFullName } from "@/data/types";
-import type { NetworkRole, PersonArea } from "@/data/types";
+import type { NetworkRole, PersonArea, ReportingType } from "@/data/types";
 
 type PersonFormProps = {
   personId?: Id<"people">;
@@ -25,6 +25,7 @@ type FormState = {
   role: string;
   departmentId: string;
   managerId: string;
+  reportingType: ReportingType;
   type: PersonArea;
   networkRole: "" | NetworkRole;
   districtId: string;
@@ -44,6 +45,7 @@ const emptyForm: FormState = {
   role: "",
   departmentId: "",
   managerId: "",
+  reportingType: "line",
   type: "hq",
   networkRole: "",
   districtId: "",
@@ -88,6 +90,7 @@ export function PersonForm({ personId }: PersonFormProps) {
         role: doc.role,
         departmentId: doc.departmentId,
         managerId: doc.managerId ?? "",
+        reportingType: doc.reportingType === "staff" ? "staff" : "line",
         type: doc.type,
         networkRole: doc.networkRole ?? "",
         districtId: doc.districtId ?? "",
@@ -144,6 +147,7 @@ export function PersonForm({ personId }: PersonFormProps) {
         managerId: state.managerId
           ? (state.managerId as Id<"people">)
           : undefined,
+        reportingType: state.managerId ? state.reportingType : undefined,
         type: state.type,
         networkRole: state.networkRole || undefined,
         districtId: state.districtId
@@ -282,6 +286,30 @@ export function PersonForm({ personId }: PersonFormProps) {
             ))}
           </select>
         </Field>
+        {state.managerId ? (
+          <div>
+            <Field label="Collocazione organizzativa">
+              <select
+                value={state.reportingType}
+                onChange={(e) =>
+                  set(
+                    "reportingType",
+                    e.target.value as FormState["reportingType"],
+                  )
+                }
+                className={inputClass}
+              >
+                <option value="line">Linea gerarchica</option>
+                <option value="staff">Staff del responsabile</option>
+              </select>
+            </Field>
+            <p className="mt-1.5 text-xs leading-relaxed text-pcg-text-muted">
+              Usa &quot;Staff del responsabile&quot; per ruoli che riportano
+              direttamente al responsabile ma non appartengono alla stessa linea
+              gerarchica delle funzioni operative.
+            </p>
+          </div>
+        ) : null}
         <Field label="Email">
           <input
             required

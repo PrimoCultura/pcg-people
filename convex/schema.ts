@@ -1,6 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { networkRole, personType } from "./lib/enums";
+import { networkRole, personType, reportingType } from "./lib/enums";
 
 export default defineSchema({
   people: defineTable({
@@ -9,6 +9,8 @@ export default defineSchema({
     role: v.string(),
     departmentId: v.id("departments"),
     managerId: v.optional(v.id("people")),
+    /** Absent = line (backward compatible). */
+    reportingType: v.optional(reportingType),
     type: personType,
     networkRole: v.optional(networkRole),
     districtId: v.optional(v.id("districts")),

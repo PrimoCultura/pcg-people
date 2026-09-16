@@ -2,14 +2,23 @@ import type { Edge, Node } from "@xyflow/react";
 import { Position } from "@xyflow/react";
 import { graphlib, layout as dagreLayout } from "@dagrejs/dagre";
 
-const NODE_WIDTH = 220;
-const NODE_HEIGHT = 112;
+const PERSON_NODE_WIDTH = 220;
+const PERSON_NODE_HEIGHT = 112;
+const GROUP_NODE_WIDTH = 160;
+const GROUP_NODE_HEIGHT = 36;
 
 export type LayoutOptions = {
   direction?: "TB" | "LR";
   nodesep?: number;
   ranksep?: number;
 };
+
+function sizeForNode(node: Node): { width: number; height: number } {
+  if (node.type === "group") {
+    return { width: GROUP_NODE_WIDTH, height: GROUP_NODE_HEIGHT };
+  }
+  return { width: PERSON_NODE_WIDTH, height: PERSON_NODE_HEIGHT };
+}
 
 /**
  * Positions nodes with Dagre (top-to-bottom by default).
@@ -30,16 +39,14 @@ export function getLayoutedElements<
   graph.setGraph({
     rankdir: direction,
     nodesep: options.nodesep ?? 36,
-    ranksep: options.ranksep ?? 72,
+    ranksep: options.ranksep ?? 64,
     marginx: 24,
     marginy: 24,
   });
 
   for (const node of nodes) {
-    graph.setNode(node.id, {
-      width: NODE_WIDTH,
-      height: NODE_HEIGHT,
-    });
+    const { width, height } = sizeForNode(node);
+    graph.setNode(node.id, { width, height });
   }
 
   for (const edge of edges) {
@@ -50,13 +57,14 @@ export function getLayoutedElements<
 
   const layoutedNodes = nodes.map((node) => {
     const position = graph.node(node.id);
+    const { width, height } = sizeForNode(node);
     return {
       ...node,
       targetPosition: isHorizontal ? Position.Left : Position.Top,
       sourcePosition: isHorizontal ? Position.Right : Position.Bottom,
       position: {
-        x: position.x - NODE_WIDTH / 2,
-        y: position.y - NODE_HEIGHT / 2,
+        x: position.x - width / 2,
+        y: position.y - height / 2,
       },
     };
   });
@@ -64,5 +72,5 @@ export function getLayoutedElements<
   return { nodes: layoutedNodes, edges };
 }
 
-export const ORG_NODE_WIDTH = NODE_WIDTH;
-export const ORG_NODE_HEIGHT = NODE_HEIGHT;
+export const ORG_NODE_WIDTH = PERSON_NODE_WIDTH;
+export const ORG_NODE_HEIGHT = PERSON_NODE_HEIGHT;

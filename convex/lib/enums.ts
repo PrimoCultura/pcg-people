@@ -7,3 +7,6 @@ export const networkRole = v.union(
   v.literal("district-manager"),
   v.literal("area-manager"),
 );
+
+/** Organizational placement vs manager — absent means line. */
+export const reportingType = v.union(v.literal("line"), v.literal("staff"));

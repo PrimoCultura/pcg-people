@@ -14,6 +14,7 @@ import {
 import { AreaManagerDetails } from "@/components/organization/AreaManagerDetails";
 import { OrganizationControls } from "@/components/organization/OrganizationControls";
 import { OrganizationFlowProvider } from "@/components/organization/OrganizationFlowContext";
+import { OrgGroupNode } from "@/components/organization/OrgGroupNode";
 import { PersonOrgNode } from "@/components/organization/PersonOrgNode";
 import type { Clinic } from "@/data/clinic";
 import { getPersonFullName, type Person } from "@/data/types";
@@ -29,6 +30,7 @@ import {
 
 const nodeTypes = {
   person: PersonOrgNode,
+  group: OrgGroupNode,
 } satisfies NodeTypes;
 
 type OrganizationFlowProps = {
@@ -97,6 +99,7 @@ function OrganizationFlowInner({
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_event, node: Node) => {
+      if (node.type === "group") return;
       const data = node.data as PersonOrgNodeData;
       if (!data?.personId) return;
       openProfile(data.personId);

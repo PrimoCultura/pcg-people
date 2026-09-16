@@ -2,6 +2,7 @@ import type { Edge, Node } from "@xyflow/react";
 import { getAreaManagerClinics } from "@/data/mockClinics";
 import { mockPeople } from "@/data/mockPeople";
 import {
+  getReportingType,
   isAreaManager,
   isDistrictManager,
   isNetworkHead,
@@ -30,7 +31,16 @@ export type PersonOrgNodeData = {
   isAreaManager: boolean;
 };
 
+/** Virtual label node — rendering only, never persisted. */
+export type OrgGroupNodeData = {
+  label: string;
+  kind: "line" | "staff";
+  parentPersonId: string;
+};
+
 export type OrgPersonNode = Node<PersonOrgNodeData, "person">;
+export type OrgGroupNode = Node<OrgGroupNodeData, "group">;
+export type OrgChartNode = OrgPersonNode | OrgGroupNode;
 
 export type ClinicLike = {
   id: string;
@@ -54,6 +64,19 @@ function buildChildMap(people: Person[]): Map<string, Person[]> {
     );
   }
   return map;
+}
+
+function splitReports(children: Person[]): {
+  lineReports: Person[];
+  staffReports: Person[];
+} {
+  const lineReports: Person[] = [];
+  const staffReports: Person[] = [];
+  for (const child of children) {
+    if (getReportingType(child) === "staff") staffReports.push(child);
+    else lineReports.push(child);
+  }
+  return { lineReports, staffReports };
 }
 
 /** Valid org roots: explicit vertice without a manager. */
@@ -148,7 +171,6 @@ function getDiagramRoots(
     const roots = getValidOrgRoots(allPeople);
     if (roots.length === 0) return { roots: [], status: "missing" };
     if (roots.length > 1) return { roots: [], status: "multiple" };
-    // Root must be in the graph (it is — all people are included)
     return { roots, status: "ok" };
   }
   const idSet = new Set(scoped.map((p) => p.id));
@@ -223,13 +245,22 @@ function metaLabelFor(person: Person, mode: OrgMode): string {
   return getPersonDepartmentLabel(person);
 }
 
+function groupNodeId(parentId: string, kind: "line" | "staff"): string {
+  return `group-${kind}-${parentId}`;
+}
+
+/**
+ * Builds React Flow nodes/edges from managerId.
+ * When a manager has staff reports, inserts virtual group labels
+ * (Direzioni / Staff) for layout only — never persisted.
+ */
 export function buildOrganizationGraph(
   mode: OrgMode,
   collapsed: Set<string>,
   people: Person[] = mockPeople,
   clinics: ClinicLike[] = [],
 ): {
-  nodes: OrgPersonNode[];
+  nodes: OrgChartNode[];
   edges: Edge[];
   status: OrgRootStatus;
   orphans: Person[];
@@ -238,8 +269,7 @@ export function buildOrganizationGraph(
   const idSet = new Set(scoped.map((p) => p.id));
   const childMap = buildChildMap(scoped);
   const { roots, status } = getDiagramRoots(mode, scoped, people);
-  const orphans =
-    mode === "organization" ? getOrgOrphans(people) : [];
+  const orphans = mode === "organization" ? getOrgOrphans(people) : [];
   const visibleIds = collectVisibleIds(roots, childMap, collapsed);
   const byId = new Map(scoped.map((p) => [p.id, p]));
 
@@ -250,7 +280,7 @@ export function buildOrganizationGraph(
     return getAreaManagerClinics(personId).length;
   };
 
-  const nodes: OrgPersonNode[] = [];
+  const nodes: OrgChartNode[] = [];
   for (const id of visibleIds) {
     const person = byId.get(id);
     if (!person) continue;
@@ -281,20 +311,93 @@ export function buildOrganizationGraph(
   }
 
   const edges: Edge[] = [];
-  for (const person of scoped) {
-    if (!person.managerId) continue;
-    if (!visibleIds.has(person.id) || !visibleIds.has(person.managerId)) {
+  const groupIdsAdded = new Set<string>();
+
+  const addGroupNode = (
+    parentId: string,
+    kind: "line" | "staff",
+    label: string,
+  ) => {
+    const id = groupNodeId(parentId, kind);
+    if (groupIdsAdded.has(id)) return id;
+    groupIdsAdded.add(id);
+    nodes.push({
+      id,
+      type: "group",
+      position: { x: 0, y: 0 },
+      selectable: false,
+      draggable: false,
+      data: {
+        label,
+        kind,
+        parentPersonId: parentId,
+      },
+    });
+    return id;
+  };
+
+  // Attach visible children under each visible, expanded manager.
+  for (const managerId of visibleIds) {
+    if (collapsed.has(managerId)) continue;
+    if (!idSet.has(managerId)) continue;
+
+    const children = (childMap.get(managerId) ?? []).filter((c) =>
+      visibleIds.has(c.id),
+    );
+    if (children.length === 0) continue;
+
+    const { lineReports, staffReports } = splitReports(children);
+
+    if (staffReports.length === 0) {
+      for (const child of lineReports) {
+        edges.push({
+          id: `e-${managerId}-${child.id}`,
+          source: managerId,
+          target: child.id,
+          type: "smoothstep",
+          animated: false,
+        });
+      }
       continue;
     }
-    if (!idSet.has(person.managerId)) continue;
 
+    if (lineReports.length > 0) {
+      const lineGroupId = addGroupNode(managerId, "line", "Direzioni");
+      edges.push({
+        id: `e-${managerId}-${lineGroupId}`,
+        source: managerId,
+        target: lineGroupId,
+        type: "smoothstep",
+        animated: false,
+      });
+      for (const child of lineReports) {
+        edges.push({
+          id: `e-${lineGroupId}-${child.id}`,
+          source: lineGroupId,
+          target: child.id,
+          type: "smoothstep",
+          animated: false,
+        });
+      }
+    }
+
+    const staffGroupId = addGroupNode(managerId, "staff", "Staff");
     edges.push({
-      id: `e-${person.managerId}-${person.id}`,
-      source: person.managerId,
-      target: person.id,
+      id: `e-${managerId}-${staffGroupId}`,
+      source: managerId,
+      target: staffGroupId,
       type: "smoothstep",
       animated: false,
     });
+    for (const child of staffReports) {
+      edges.push({
+        id: `e-${staffGroupId}-${child.id}`,
+        source: staffGroupId,
+        target: child.id,
+        type: "smoothstep",
+        animated: false,
+      });
+    }
   }
 
   return { nodes, edges, status, orphans };

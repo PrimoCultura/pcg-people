@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { PersonAvatar } from "@/components/people/PersonAvatar";
-import { getPersonFullName, type Person } from "@/data/types";
+import {
+  getPersonFullName,
+  getReportingType,
+  type Person,
+} from "@/data/types";
 import { getPersonDepartmentLabel } from "@/lib/personLabels";
 
 type PersonOrganizationProps = {
@@ -13,6 +17,7 @@ export function PersonOrganization({
   manager,
 }: PersonOrganizationProps) {
   const departmentName = getPersonDepartmentLabel(person);
+  const isStaff = Boolean(manager) && getReportingType(person) === "staff";
 
   return (
     <section aria-labelledby="person-org-heading">
@@ -54,6 +59,15 @@ export function PersonOrganization({
                   </span>
                 </span>
               </Link>
+            </dd>
+          </div>
+        ) : null}
+
+        {isStaff ? (
+          <div>
+            <dt className="text-sm text-pcg-text-muted">Collocazione</dt>
+            <dd className="mt-1 text-base text-pcg-text">
+              Staff del responsabile
             </dd>
           </div>
         ) : null}

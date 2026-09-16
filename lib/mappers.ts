@@ -3,6 +3,7 @@ import type {
   NetworkRole,
   Person,
   PersonArea,
+  ReportingType,
 } from "@/data/types";
 
 /** Convex enriched person document (from people.enrichPerson). */
@@ -13,6 +14,7 @@ export type ConvexPersonDoc = {
   role: string;
   departmentId: Id<"departments">;
   managerId?: Id<"people">;
+  reportingType?: ReportingType;
   type: PersonArea;
   networkRole?: NetworkRole;
   districtId?: Id<"districts">;
@@ -85,6 +87,7 @@ export function mapConvexPerson(doc: ConvexPersonDoc): Person {
     type: doc.type,
     photoUrl: doc.photoUrl,
     managerId: doc.managerId,
+    reportingType: doc.reportingType,
     location: doc.location,
     districtId: doc.districtId,
     districtLabel: doc.districtName ?? undefined,

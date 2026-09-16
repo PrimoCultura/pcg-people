@@ -6,6 +6,9 @@ export type PersonArea = "hq" | "network";
 
 export type NetworkRole = "head" | "district-manager" | "area-manager";
 
+/** Placement vs manager in the org chart. Absent = line. */
+export type ReportingType = "line" | "staff";
+
 export type Person = {
   id: string;
   firstName: string;
@@ -27,6 +30,11 @@ export type Person = {
   photoUrl?: string | null;
   /** Direct manager — Person id, never a display name */
   managerId?: string;
+  /**
+   * How this person sits under their manager in the org chart.
+   * Absent or "line" = hierarchical line; "staff" = staff grouping.
+   */
+  reportingType?: ReportingType;
   /** Office / workplace label */
   location?: string;
   /** Stable link to District.id (network roles) */
@@ -49,6 +57,13 @@ export function getPersonInitials(
   person: Pick<Person, "firstName" | "lastName">,
 ): string {
   return `${person.firstName.charAt(0)}${person.lastName.charAt(0)}`.toUpperCase();
+}
+
+/** Normalize optional reportingType — missing means line. */
+export function getReportingType(
+  person: Pick<Person, "reportingType">,
+): ReportingType {
+  return person.reportingType === "staff" ? "staff" : "line";
 }
 
 export function isNetworkHead(person: Person): boolean {

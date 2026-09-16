@@ -8,7 +8,7 @@ import {
   requirePerson,
   userError,
 } from "./lib/validators";
-import { networkRole, personType } from "./lib/enums";
+import { networkRole, personType, reportingType } from "./lib/enums";
 
 async function photoUrlFor(
   ctx: { storage: { getUrl: (id: Id<"_storage">) => Promise<string | null> } },
@@ -119,6 +119,7 @@ const personFields = {
   role: v.string(),
   departmentId: v.id("departments"),
   managerId: v.optional(v.id("people")),
+  reportingType: v.optional(reportingType),
   type: personType,
   networkRole: v.optional(networkRole),
   districtId: v.optional(v.id("districts")),
