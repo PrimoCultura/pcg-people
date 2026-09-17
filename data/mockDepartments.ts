@@ -8,8 +8,21 @@ import type { Person } from "@/data/types";
  */
 export const mockDepartments: Department[] = [
   {
+    id: "ceo",
+    name: "CEO",
+    slug: "ceo",
+    shortDescription: "Vertice e direzione generale del gruppo.",
+    description:
+      "La funzione CEO rappresenta il vertice aziendale: indirizzo strategico, governance e coordinamento delle direzioni.",
+    headId: "p-014",
+    contactFor: ["direzione generale", "governance", "priorità strategiche"],
+    tags: ["ceo", "direzione"],
+    order: 0,
+  },
+  {
     id: "finance",
     name: "Finance",
+    slug: "finance",
     shortDescription:
       "Pianificazione, controllo di gestione e supporto economico al gruppo.",
     description:

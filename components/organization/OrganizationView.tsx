@@ -1,11 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { DepartmentOrganizationView } from "@/components/organization/departments/DepartmentOrganizationView";
 import { OrganizationFlow } from "@/components/organization/OrganizationFlow";
 import type { Clinic } from "@/data/clinic";
 import type { Department } from "@/data/department";
 import type { Person } from "@/data/types";
 import type { OrgMode } from "@/lib/organizationTree";
+
+type OrgViewMode = OrgMode | "departments";
 
 type OrganizationViewProps = {
   people: Person[];
@@ -13,12 +17,41 @@ type OrganizationViewProps = {
   departments?: Department[];
 };
 
+function parseViewParam(value: string | null): OrgViewMode {
+  if (value === "dipartimenti" || value === "departments") return "departments";
+  if (value === "network") return "network";
+  return "organization";
+}
+
+function viewToParam(mode: OrgViewMode): string | null {
+  if (mode === "departments") return "dipartimenti";
+  if (mode === "network") return "network";
+  return null;
+}
+
 export function OrganizationView({
   people,
   clinics = [],
   departments = [],
 }: OrganizationViewProps) {
-  const [mode, setMode] = useState<OrgMode>("organization");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const mode = parseViewParam(searchParams.get("vista"));
+
+  const selectMode = useCallback(
+    (next: OrgViewMode) => {
+      const params = new URLSearchParams(searchParams.toString());
+      const vista = viewToParam(next);
+      if (vista) params.set("vista", vista);
+      else params.delete("vista");
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, {
+        scroll: false,
+      });
+    },
+    [pathname, router, searchParams],
+  );
 
   return (
     <div className="mt-8 sm:mt-10">
@@ -30,28 +63,41 @@ export function OrganizationView({
         <ModeTab
           label="Organizzazione"
           selected={mode === "organization"}
-          onSelect={() => setMode("organization")}
+          onSelect={() => selectMode("organization")}
+        />
+        <ModeTab
+          label="Dipartimenti"
+          selected={mode === "departments"}
+          onSelect={() => selectMode("departments")}
         />
         <ModeTab
           label="Network"
           selected={mode === "network"}
-          onSelect={() => setMode("network")}
+          onSelect={() => selectMode("network")}
         />
       </div>
 
-      <p className="mt-4 max-w-2xl text-sm text-pcg-text-secondary">
-        {mode === "organization"
-          ? "Gerarchia completa PCG a partire dal vertice, basata sui riporti diretti. Espandi i rami per esplorare i team."
-          : "Ramo Network: Head of Network → District Manager → Area Manager. Le cliniche si aprono dal dettaglio AM."}
-      </p>
-
-      <OrganizationFlow
-        key={mode}
-        mode={mode}
-        people={people}
-        clinics={clinics}
-        departments={departments}
-      />
+      {mode === "departments" ? (
+        <DepartmentOrganizationView
+          people={people}
+          departments={departments}
+        />
+      ) : (
+        <>
+          <p className="mt-4 max-w-2xl text-sm text-pcg-text-secondary">
+            {mode === "organization"
+              ? "Gerarchia completa PCG a partire dal vertice, basata sui riporti diretti. Espandi i rami per esplorare i team."
+              : "Ramo Network: Head of Network → District Manager → Area Manager. Le cliniche si aprono dal dettaglio AM."}
+          </p>
+          <OrganizationFlow
+            key={mode}
+            mode={mode}
+            people={people}
+            clinics={clinics}
+            departments={departments}
+          />
+        </>
+      )}
     </div>
   );
 }

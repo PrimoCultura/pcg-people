@@ -66,6 +66,18 @@ type SeedClinic = {
 
 const DEPARTMENTS: SeedDept[] = [
   {
+    oldId: "ceo",
+    name: "CEO",
+    slug: "ceo",
+    shortDescription: "Vertice e direzione generale del gruppo.",
+    description:
+      "La funzione CEO rappresenta il vertice aziendale: indirizzo strategico, governance e coordinamento delle direzioni.",
+    contactFor: ["direzione generale", "governance", "priorità strategiche"],
+    tags: ["ceo", "direzione"],
+    order: 0,
+    headOldId: "p-014",
+  },
+  {
     oldId: "finance",
     name: "Finance",
     slug: "finance",

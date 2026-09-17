@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { OrganizationView } from "@/components/organization/OrganizationView";
 import { isConvexConfigured } from "@/components/providers/ConvexClientProvider";
 import {
@@ -8,6 +9,20 @@ import {
 } from "@/lib/data/usePublicData";
 
 export function OrganizationPageClient() {
+  return (
+    <Suspense
+      fallback={
+        <p className="mt-10 text-sm text-pcg-text-secondary">
+          Caricamento organigramma…
+        </p>
+      }
+    >
+      <OrganizationPageBody />
+    </Suspense>
+  );
+}
+
+function OrganizationPageBody() {
   if (!isConvexConfigured()) {
     const { people, clinics, departments } = getMockOrganizationBundle();
     return (

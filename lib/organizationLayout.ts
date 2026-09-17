@@ -166,14 +166,15 @@ function applyStaffCombLayout<N extends Node, E extends Edge>(
   const byId = new Map(nodes.map((n) => [n.id, { ...n }]));
   const childrenOf = buildChildrenMap(edges);
 
-  // Top-level Staff hubs (parent is a person manager).
+  // Top-level Staff hubs (parent is a person or department root).
   for (const node of nodes) {
     if (node.type !== "hub") continue;
+    if (node.id.startsWith("dept-hub-")) continue;
     const hubData = node.data as {
       parentPersonId?: string;
       parentNodeId?: string;
     };
-    const managerId = hubData.parentPersonId;
+    const managerId = hubData.parentNodeId ?? hubData.parentPersonId;
     if (!managerId) continue;
     const manager = byId.get(managerId);
     if (!manager) continue;
@@ -240,8 +241,9 @@ function applyStaffCombLayout<N extends Node, E extends Edge>(
   const yShift = new Map<string, number>();
   for (const node of nodes) {
     if (node.type !== "hub") continue;
-    const hubData = node.data as { parentPersonId?: string };
-    const managerId = hubData.parentPersonId;
+    if (node.id.startsWith("dept-hub-")) continue;
+    const hubData = node.data as { parentPersonId?: string; parentNodeId?: string };
+    const managerId = hubData.parentNodeId ?? hubData.parentPersonId;
     if (!managerId) continue;
     const hub = byId.get(node.id);
     if (!hub) continue;
@@ -315,9 +317,6 @@ function isStaffOwnedEdge(edge: Edge, nodesById: Map<string, Node>): boolean {
   const source = nodesById.get(edge.source);
   const target = nodesById.get(edge.target);
   if (source?.type === "hub" || target?.type === "hub") return true;
-  if (source?.type === "department" || target?.type === "department") {
-    return true;
-  }
   return false;
 }
 
@@ -337,13 +336,26 @@ export function getLayoutedElements<
   const staffOwnedIds = new Set<string>();
   for (const node of nodes) {
     if (node.type !== "hub") continue;
-    const data = node.data as { parentPersonId?: string };
-    if (!data.parentPersonId) continue; // only top-level staff hubs
+    const data = node.data as { parentPersonId?: string; parentNodeId?: string };
+    const anchorId = data.parentNodeId ?? data.parentPersonId;
+    // Top-level staff hubs: anchored on a person or department root (not nested dept hubs).
+    if (!anchorId) continue;
+    if (!data.parentPersonId && !data.parentNodeId) continue;
+    // Nested department hubs have parentNodeId like virtual-department-* and no
+    // parentPersonId in some cases — treat as top-level when parent is in graph
+    // as person/department and the hub is a direct child of that parent.
+    const parent = nodesById.get(anchorId);
+    if (!parent || (parent.type !== "person" && parent.type !== "department")) {
+      continue;
+    }
+    // Skip nested dept hubs: parent is department but hub id starts with dept-hub-
+    if (node.id.startsWith("dept-hub-")) continue;
+
     for (const id of collectDescendants(node.id, edges)) {
       staffOwnedIds.add(id);
     }
     staffOwnedIds.add(node.id);
-    staffOwnedIds.add(`staff-label-${data.parentPersonId}`);
+    staffOwnedIds.add(`staff-label-${anchorId}`);
   }
 
   const graph = new graphlib.Graph().setDefaultEdgeLabel(() => ({}));
@@ -364,9 +376,10 @@ export function getLayoutedElements<
       if (node.type === "person" || node.type === "department") continue;
     }
     if (node.type === "hub") {
-      const data = node.data as { parentPersonId?: string };
-      // Only top-level staff hubs participate in dagre (anchor on manager).
-      if (!data.parentPersonId) continue;
+      const data = node.data as { parentPersonId?: string; parentNodeId?: string };
+      if (node.id.startsWith("dept-hub-")) continue;
+      const anchorId = data.parentNodeId ?? data.parentPersonId;
+      if (!anchorId) continue;
     }
     const { width, height } = sizeForNode(node);
     graph.setNode(node.id, { width, height });
@@ -377,9 +390,10 @@ export function getLayoutedElements<
     const target = nodesById.get(edge.target);
     if (source?.type === "label" || target?.type === "label") continue;
     if (isStaffOwnedEdge(edge, nodesById) && target?.type !== "hub") {
-      // Keep manager → top-level staff hub so the hub ranks near the manager.
-      const targetData = target?.data as { parentPersonId?: string } | undefined;
-      if (!(target?.type === "hub" && targetData?.parentPersonId)) continue;
+      // Keep root → top-level staff hub so the hub ranks near the root.
+      if (!(target?.type === "hub" && !target.id.startsWith("dept-hub-"))) {
+        continue;
+      }
     }
     if (!graph.hasNode(edge.source) || !graph.hasNode(edge.target)) continue;
     graph.setEdge(edge.source, edge.target);
@@ -389,8 +403,7 @@ export function getLayoutedElements<
   for (const edge of edges) {
     const target = nodesById.get(edge.target);
     if (target?.type !== "hub") continue;
-    const data = target.data as { parentPersonId?: string };
-    if (!data.parentPersonId) continue;
+    if (target.id.startsWith("dept-hub-")) continue;
     if (!graph.hasNode(edge.source) || !graph.hasNode(edge.target)) continue;
     if (!graph.hasEdge(edge.source, edge.target)) {
       graph.setEdge(edge.source, edge.target);

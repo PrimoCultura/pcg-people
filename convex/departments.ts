@@ -180,6 +180,48 @@ export const setActive = mutation({
 });
 
 /**
+ * Ensure a CEO department exists (for the departments org view root).
+ * Idempotent — skips if slug «ceo» is already present.
+ */
+export const ensureCeoDepartment = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const existing = await ctx.db
+      .query("departments")
+      .withIndex("by_slug", (q) => q.eq("slug", "ceo"))
+      .unique();
+    if (existing) {
+      return { created: false, id: existing._id };
+    }
+
+    const roots = (
+      await ctx.db
+        .query("people")
+        .withIndex("by_active", (q) => q.eq("active", true))
+        .collect()
+    ).filter((p) => p.isOrgRoot === true && !p.managerId);
+    const root = roots[0];
+    const timestamp = now();
+    const id = await ctx.db.insert("departments", {
+      name: "CEO",
+      slug: "ceo",
+      shortDescription: "Vertice e direzione generale del gruppo.",
+      description:
+        "La funzione CEO rappresenta il vertice aziendale: indirizzo strategico, governance e coordinamento delle direzioni.",
+      headId: root?._id,
+      contactFor: ["direzione generale", "governance", "priorità strategiche"],
+      tags: ["ceo", "direzione"],
+      order: 0,
+      organizationalPlacement: "line",
+      active: true,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    return { created: true, id };
+  },
+});
+
+/**
  * One-shot repair: mark Cultura as staff and point its head to the org root
  * when missing/wrong — keeps the Staff AD → Cultura container working.
  */

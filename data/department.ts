@@ -7,6 +7,8 @@ export type DepartmentOrganizationalPlacement = "line" | "staff";
 export type Department = {
   id: string;
   name: string;
+  /** URL/slug key when available (Convex). */
+  slug?: string;
   shortDescription: string;
   description: string;
   /** Person id of the department head */
