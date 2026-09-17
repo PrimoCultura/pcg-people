@@ -46,7 +46,10 @@ export type OrgLabelNodeData = {
 /** Invisible junction for staff comb edges. */
 export type OrgHubNodeData = {
   kind: "hub";
-  parentPersonId: string;
+  /** Person manager when this is a Staff band hub. */
+  parentPersonId?: string;
+  /** Graph node the comb hangs from (person id or virtual-department-*). */
+  parentNodeId: string;
 };
 
 export type OrgDepartmentNodeData = {
@@ -212,6 +215,10 @@ export function staffHubNodeId(parentId: string): string {
 
 export function staffLabelNodeId(parentId: string): string {
   return `staff-label-${parentId}`;
+}
+
+export function departmentHubNodeId(departmentId: string): string {
+  return `dept-hub-${departmentId}`;
 }
 
 export function staffGroupLabel(manager: Person): string {
@@ -601,7 +608,11 @@ export function buildOrganizationGraph(
         position: { x: 0, y: 0 },
         selectable: false,
         draggable: false,
-        data: { kind: "hub", parentPersonId: managerId },
+        data: {
+          kind: "hub",
+          parentPersonId: managerId,
+          parentNodeId: managerId,
+        },
       });
     }
 
@@ -655,9 +666,25 @@ export function buildOrganizationGraph(
       pushEdge(hubId, deptNodeId, { staff: true });
 
       if (isExpanded) {
+        const deptHubId = departmentHubNodeId(dept.id);
+        if (!virtualIdsAdded.has(deptHubId)) {
+          virtualIdsAdded.add(deptHubId);
+          nodes.push({
+            id: deptHubId,
+            type: "hub",
+            position: { x: 0, y: 0 },
+            selectable: false,
+            draggable: false,
+            data: {
+              kind: "hub",
+              parentNodeId: deptNodeId,
+            },
+          });
+        }
+        pushEdge(deptNodeId, deptHubId, { staff: true });
         for (const member of inner) {
           if (!personNodeIds.has(member.id)) continue;
-          pushEdge(deptNodeId, member.id);
+          pushEdge(deptHubId, member.id, { staff: true });
         }
       }
     }

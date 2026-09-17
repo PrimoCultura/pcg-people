@@ -14,6 +14,7 @@ const STAFF_GAP_Y = 20;
 const STAFF_OFFSET_X = 72;
 const STAFF_STUB = 36;
 const STAFF_BUS_Y = 28;
+const NESTED_OFFSET_X = 48;
 
 export type LayoutOptions = {
   direction?: "TB" | "LR";
@@ -48,26 +49,130 @@ function collectDescendants(rootId: string, edges: Edge[]): Set<string> {
   return out;
 }
 
-/**
- * Staff comb (right side):
- * label above horizontal bus → vertical riser (hub) near the chart →
- * short stubs outward → person/department cards on the outside.
- */
-function applyStaffCombLayout<N extends Node, E extends Edge>(
-  nodes: N[],
-  edges: E[],
-): N[] {
-  const byId = new Map(nodes.map((n) => [n.id, { ...n }]));
+function buildChildrenMap(edges: Edge[]): Map<string, string[]> {
   const childrenOf = new Map<string, string[]>();
   for (const edge of edges) {
     const list = childrenOf.get(edge.source) ?? [];
     list.push(edge.target);
     childrenOf.set(edge.source, list);
   }
+  return childrenOf;
+}
 
+function subtreeBottom(
+  byId: Map<string, Node>,
+  rootId: string,
+  edges: Edge[],
+): number {
+  const root = byId.get(rootId);
+  if (!root) return 0;
+  let bottom = root.position.y + sizeForNode(root).height;
+  for (const desc of collectDescendants(rootId, edges)) {
+    const n = byId.get(desc);
+    if (!n) continue;
+    bottom = Math.max(bottom, n.position.y + sizeForNode(n).height);
+  }
+  return bottom;
+}
+
+/**
+ * Lay out children of a parent as a rightward comb:
+ * parent → horizontal → vertical riser (optional hub) → stubs → cards.
+ * Recurses so nested expansions (Cultura → people → reports) stay on the right.
+ */
+function layoutRightCombSubtree(
+  byId: Map<string, Node>,
+  parentId: string,
+  edges: Edge[],
+  childrenOf: Map<string, string[]>,
+): void {
+  const parent = byId.get(parentId);
+  if (!parent) return;
+  if (parent.type === "hub" || parent.type === "label") return;
+
+  const rawChildren = childrenOf.get(parentId) ?? [];
+  let hubId: string | null = null;
+  const memberIds: string[] = [];
+
+  for (const id of rawChildren) {
+    const n = byId.get(id);
+    if (!n) continue;
+    if (n.type === "label") continue;
+    if (n.type === "hub") {
+      hubId = id;
+      for (const mid of childrenOf.get(id) ?? []) {
+        const m = byId.get(mid);
+        if (m && (m.type === "person" || m.type === "department")) {
+          memberIds.push(mid);
+        }
+      }
+      continue;
+    }
+    if (n.type === "person" || n.type === "department") {
+      memberIds.push(id);
+    }
+  }
+
+  if (memberIds.length === 0 && !hubId) return;
+
+  const parentSize = sizeForNode(parent);
+  const hubX = parent.position.x + parentSize.width + NESTED_OFFSET_X;
+  const hubY = parent.position.y + Math.min(20, parentSize.height / 3);
+
+  byId.set(parentId, {
+    ...parent,
+    sourcePosition: Position.Right,
+  });
+
+  if (hubId) {
+    byId.set(hubId, {
+      ...byId.get(hubId)!,
+      position: { x: hubX, y: hubY },
+      targetPosition: Position.Left,
+      sourcePosition: Position.Bottom,
+    });
+  }
+
+  const memberX = hubX + STAFF_STUB;
+  let cursorY = hubY + (hubId ? 24 : 0);
+
+  for (const id of memberIds) {
+    const n = byId.get(id)!;
+    const { height } = sizeForNode(n);
+
+    byId.set(id, {
+      ...n,
+      position: { x: memberX, y: cursorY },
+      targetPosition: Position.Left,
+      sourcePosition: Position.Right,
+    });
+
+    layoutRightCombSubtree(byId, id, edges, childrenOf);
+
+    cursorY = subtreeBottom(byId, id, edges) + STAFF_GAP_Y;
+    void height;
+  }
+}
+
+/**
+ * Staff comb (right side) for the Staff band, then nested rightward combs
+ * for every expanded staff department / person so expansions never fold
+ * back over the main director spine.
+ */
+function applyStaffCombLayout<N extends Node, E extends Edge>(
+  nodes: N[],
+  edges: E[],
+): N[] {
+  const byId = new Map(nodes.map((n) => [n.id, { ...n }]));
+  const childrenOf = buildChildrenMap(edges);
+
+  // Top-level Staff hubs (parent is a person manager).
   for (const node of nodes) {
     if (node.type !== "hub") continue;
-    const hubData = node.data as { parentPersonId?: string };
+    const hubData = node.data as {
+      parentPersonId?: string;
+      parentNodeId?: string;
+    };
     const managerId = hubData.parentPersonId;
     if (!managerId) continue;
     const manager = byId.get(managerId);
@@ -80,7 +185,6 @@ function applyStaffCombLayout<N extends Node, E extends Edge>(
 
     const managerSize = sizeForNode(manager);
     const busY = manager.position.y + managerSize.height + STAFF_BUS_Y;
-    // Montante vicino all'organigramma (lato interno del pettine).
     const hubX = manager.position.x + managerSize.width + STAFF_OFFSET_X;
     const hubY = busY;
 
@@ -105,54 +209,34 @@ function applyStaffCombLayout<N extends Node, E extends Edge>(
       });
     }
 
+    // Manager sources line reports downward; staff leaves via hub.
+    byId.set(managerId, {
+      ...manager,
+      sourcePosition: Position.Bottom,
+    });
+
     let cursorY = hubY + 28;
     for (const id of memberIds) {
       const n = byId.get(id)!;
-      const { width, height } = sizeForNode(n);
-      // Stub verso l'esterno: card a destra del montante.
+      const { height } = sizeForNode(n);
       const memberX = hubX + STAFF_STUB;
-      const memberY = cursorY;
-      const oldPos = n.position;
-      const dx = memberX - oldPos.x;
-      const dy = memberY - oldPos.y;
 
       byId.set(id, {
         ...n,
-        position: { x: memberX, y: memberY },
+        position: { x: memberX, y: cursorY },
         targetPosition: Position.Left,
-        sourcePosition: Position.Bottom,
+        sourcePosition: Position.Right,
       });
 
-      if (dx !== 0 || dy !== 0) {
-        for (const desc of collectDescendants(id, edges)) {
-          if (desc === id) continue;
-          const d = byId.get(desc);
-          if (!d) continue;
-          byId.set(desc, {
-            ...d,
-            position: {
-              x: d.position.x + dx,
-              y: d.position.y + dy,
-            },
-          });
-        }
-      }
+      // Nested comb for expanded department / person content.
+      layoutRightCombSubtree(byId, id, edges, childrenOf);
 
-      // After placing this member, reserve vertical space for its expanded subtree.
-      let subtreeBottom = memberY + height;
-      for (const desc of collectDescendants(id, edges)) {
-        if (desc === id) continue;
-        const d = byId.get(desc);
-        if (!d) continue;
-        const size = sizeForNode(d);
-        subtreeBottom = Math.max(subtreeBottom, d.position.y + size.height);
-      }
-      cursorY = subtreeBottom + STAFF_GAP_Y;
-      void width;
+      cursorY = subtreeBottom(byId, id, edges) + STAFF_GAP_Y;
+      void height;
     }
   }
 
-  // Push line-report subtrees below the staff comb.
+  // Push line-report subtrees below the full staff comb (including nested).
   const yShift = new Map<string, number>();
   for (const node of nodes) {
     if (node.type !== "hub") continue;
@@ -170,14 +254,18 @@ function applyStaffCombLayout<N extends Node, E extends Edge>(
     for (const id of staffIds) {
       const n = byId.get(id);
       if (!n) continue;
-      const { height } = sizeForNode(n);
-      staffMaxBottom = Math.max(staffMaxBottom, n.position.y + height);
+      staffMaxBottom = Math.max(
+        staffMaxBottom,
+        n.position.y + sizeForNode(n).height,
+      );
     }
 
     const lineRoots: string[] = [];
     for (const edge of edges) {
       if (edge.source !== managerId) continue;
       if (edge.target === node.id) continue;
+      // Skip if target is already in the staff subtree
+      if (staffIds.has(edge.target)) continue;
       lineRoots.push(edge.target);
     }
 
@@ -218,6 +306,21 @@ function applyStaffCombLayout<N extends Node, E extends Edge>(
   });
 }
 
+/**
+ * Edges inside staff subtrees should not pull dagre into a tall TB layout
+ * that later overlaps directors — staff positions are owned by the comb pass.
+ */
+function isStaffOwnedEdge(edge: Edge, nodesById: Map<string, Node>): boolean {
+  if ((edge.data as { staff?: boolean } | undefined)?.staff) return true;
+  const source = nodesById.get(edge.source);
+  const target = nodesById.get(edge.target);
+  if (source?.type === "hub" || target?.type === "hub") return true;
+  if (source?.type === "department" || target?.type === "department") {
+    return true;
+  }
+  return false;
+}
+
 export function getLayoutedElements<
   N extends Node = Node,
   E extends Edge = Edge,
@@ -228,6 +331,20 @@ export function getLayoutedElements<
 ): { nodes: N[]; edges: E[] } {
   const direction = options.direction ?? "TB";
   const isHorizontal = direction === "LR";
+  const nodesById = new Map(nodes.map((n) => [n.id, n]));
+
+  // Collect every node that belongs to a staff comb (hub descendants + labels).
+  const staffOwnedIds = new Set<string>();
+  for (const node of nodes) {
+    if (node.type !== "hub") continue;
+    const data = node.data as { parentPersonId?: string };
+    if (!data.parentPersonId) continue; // only top-level staff hubs
+    for (const id of collectDescendants(node.id, edges)) {
+      staffOwnedIds.add(id);
+    }
+    staffOwnedIds.add(node.id);
+    staffOwnedIds.add(`staff-label-${data.parentPersonId}`);
+  }
 
   const graph = new graphlib.Graph().setDefaultEdgeLabel(() => ({}));
   graph.setGraph({
@@ -239,18 +356,45 @@ export function getLayoutedElements<
   });
 
   for (const node of nodes) {
-    // Labels are decorative and placed in the comb pass.
     if (node.type === "label") continue;
+    // Nested staff content (dept hubs, expanded members) is placed by comb.
+    if (staffOwnedIds.has(node.id) && node.type !== "hub") {
+      // Keep top-level staff hubs + first wave is positioned in comb;
+      // still register hubs so manager→hub edge exists for dagre rank of manager.
+      if (node.type === "person" || node.type === "department") continue;
+    }
+    if (node.type === "hub") {
+      const data = node.data as { parentPersonId?: string };
+      // Only top-level staff hubs participate in dagre (anchor on manager).
+      if (!data.parentPersonId) continue;
+    }
     const { width, height } = sizeForNode(node);
     graph.setNode(node.id, { width, height });
   }
 
   for (const edge of edges) {
-    const source = nodes.find((n) => n.id === edge.source);
-    const target = nodes.find((n) => n.id === edge.target);
+    const source = nodesById.get(edge.source);
+    const target = nodesById.get(edge.target);
     if (source?.type === "label" || target?.type === "label") continue;
+    if (isStaffOwnedEdge(edge, nodesById) && target?.type !== "hub") {
+      // Keep manager → top-level staff hub so the hub ranks near the manager.
+      const targetData = target?.data as { parentPersonId?: string } | undefined;
+      if (!(target?.type === "hub" && targetData?.parentPersonId)) continue;
+    }
     if (!graph.hasNode(edge.source) || !graph.hasNode(edge.target)) continue;
     graph.setEdge(edge.source, edge.target);
+  }
+
+  // Also ensure manager→hub edges are present for staff hubs.
+  for (const edge of edges) {
+    const target = nodesById.get(edge.target);
+    if (target?.type !== "hub") continue;
+    const data = target.data as { parentPersonId?: string };
+    if (!data.parentPersonId) continue;
+    if (!graph.hasNode(edge.source) || !graph.hasNode(edge.target)) continue;
+    if (!graph.hasEdge(edge.source, edge.target)) {
+      graph.setEdge(edge.source, edge.target);
+    }
   }
 
   dagreLayout(graph);
@@ -270,6 +414,7 @@ export function getLayoutedElements<
         ...node,
         targetPosition: isHorizontal ? Position.Left : Position.Top,
         sourcePosition: isHorizontal ? Position.Right : Position.Bottom,
+        position: node.position ?? { x: 0, y: 0 },
       };
     }
     const { width, height } = sizeForNode(node);
