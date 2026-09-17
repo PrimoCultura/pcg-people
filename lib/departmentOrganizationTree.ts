@@ -11,13 +11,9 @@ import {
 } from "@/data/types";
 import { getPersonDepartmentLabel } from "@/lib/personLabels";
 import {
-  staffHubNodeId,
-  staffLabelNodeId,
   virtualDepartmentNodeId,
   type OrgChartNode,
   type OrgDepartmentNodeData,
-  type OrgHubNodeData,
-  type OrgLabelNodeData,
   type PersonOrgNodeData,
 } from "@/lib/organizationTree";
 
@@ -111,8 +107,8 @@ function departmentNodeData(
 }
 
 /**
- * Overview: CEO department at the root, staff functions/people on a comb,
- * line departments as main branches.
+ * Overview: CEO department at the root, then HQ department cards only.
+ * No person cards here — people appear inside each department focus.
  */
 export function buildDepartmentOverviewGraph(
   people: Person[] = mockPeople,
@@ -149,11 +145,7 @@ export function buildDepartmentOverviewGraph(
 
   const edges: Edge[] = [];
   const edgeIds = new Set<string>();
-  const pushEdge = (
-    source: string,
-    target: string,
-    opts?: { staff?: boolean },
-  ) => {
+  const pushEdge = (source: string, target: string) => {
     const id = `e-${source}-${target}`;
     if (edgeIds.has(id)) return;
     edgeIds.add(id);
@@ -163,100 +155,18 @@ export function buildDepartmentOverviewGraph(
       target,
       type: "smoothstep",
       animated: false,
-      data: opts?.staff ? { staff: true } : undefined,
-      style: opts?.staff
-        ? { stroke: "var(--pcg-border-strong, #94a3b8)" }
-        : undefined,
     });
   };
 
-  const staffDepartments = departments
+  const hqDepartments = departments
     .filter((d) => !isNetworkDepartment(d) && d.id !== ceo.id)
-    .filter(
-      (d) =>
-        getDepartmentOrganizationalPlacement(d) === "staff" &&
-        d.headId === head.id,
-    )
-    .sort((a, b) => a.name.localeCompare(b.name, "it"));
-
-  const lineDepartments = departments
-    .filter((d) => !isNetworkDepartment(d) && d.id !== ceo.id)
-    .filter((d) => !staffDepartments.some((s) => s.id === d.id))
-    .filter((d) => getDepartmentOrganizationalPlacement(d) === "line")
-    .sort((a, b) => (a.order ?? 999) - (b.order ?? 999) || a.name.localeCompare(b.name, "it"));
-
-  const staffDeptIds = new Set(staffDepartments.map((d) => d.id));
-  const staffPeople = people
-    .filter(
-      (p) =>
-        p.managerId === head.id &&
-        p.id !== head.id &&
-        getReportingType(p) === "staff" &&
-        !staffDeptIds.has(p.departmentId ?? ""),
-    )
-    .sort((a, b) =>
-      `${a.lastName} ${a.firstName}`.localeCompare(
-        `${b.lastName} ${b.firstName}`,
-        "it",
-      ),
+    .sort(
+      (a, b) =>
+        (a.order ?? 999) - (b.order ?? 999) ||
+        a.name.localeCompare(b.name, "it"),
     );
 
-  const showStaff = staffDepartments.length > 0 || staffPeople.length > 0;
-
-  if (showStaff) {
-    const hubId = staffHubNodeId(ceoNodeId);
-    const labelId = staffLabelNodeId(ceoNodeId);
-    nodes.push({
-      id: hubId,
-      type: "hub",
-      position: { x: 0, y: 0 },
-      selectable: false,
-      draggable: false,
-      data: {
-        kind: "hub",
-        parentNodeId: ceoNodeId,
-        parentPersonId: ceoNodeId,
-      } satisfies OrgHubNodeData,
-    });
-    nodes.push({
-      id: labelId,
-      type: "label",
-      position: { x: 0, y: 0 },
-      selectable: false,
-      draggable: false,
-      data: {
-        kind: "label",
-        label: "Staff",
-        parentPersonId: ceoNodeId,
-      } satisfies OrgLabelNodeData,
-    });
-    pushEdge(ceoNodeId, hubId, { staff: true });
-
-    for (const dept of staffDepartments) {
-      const id = departmentNodeId(dept.id);
-      nodes.push({
-        id,
-        type: "department",
-        position: { x: 0, y: 0 },
-        style: { cursor: "pointer", pointerEvents: "auto" },
-        data: departmentNodeData(dept),
-      });
-      pushEdge(hubId, id, { staff: true });
-    }
-
-    for (const person of staffPeople) {
-      nodes.push({
-        id: person.id,
-        type: "person",
-        position: { x: 0, y: 0 },
-        style: { cursor: "pointer", pointerEvents: "auto" },
-        data: personNodeData(person),
-      });
-      pushEdge(hubId, person.id, { staff: true });
-    }
-  }
-
-  for (const dept of lineDepartments) {
+  for (const dept of hqDepartments) {
     const id = departmentNodeId(dept.id);
     nodes.push({
       id,
@@ -300,6 +210,7 @@ function buildDeptChildMap(
 export function getDepartmentFocusMembers(
   department: Department,
   people: Person[] = mockPeople,
+  allDepartments: Department[] = mockDepartments,
 ): Person[] {
   const byId = new Map(people.map((p) => [p.id, p]));
   const members = people.filter((p) => p.departmentId === department.id);
@@ -308,14 +219,40 @@ export function getDepartmentFocusMembers(
     const head = byId.get(department.headId);
     if (head) result.set(head.id, head);
   }
+
+  // CEO focus: include the head's personal staff (e.g. Chief of Staff), but not
+  // people who belong to another staff department headed by the same person
+  // (e.g. Cultura members stay in the Cultura focus).
+  if (isCeoDepartment(department) && department.headId) {
+    const staffDeptIds = new Set(
+      allDepartments
+        .filter(
+          (d) =>
+            d.id !== department.id &&
+            !isNetworkDepartment(d) &&
+            getDepartmentOrganizationalPlacement(d) === "staff" &&
+            d.headId === department.headId,
+        )
+        .map((d) => d.id),
+    );
+    for (const person of people) {
+      if (person.id === department.headId) continue;
+      if (person.managerId !== department.headId) continue;
+      if (getReportingType(person) !== "staff") continue;
+      if (staffDeptIds.has(person.departmentId ?? "")) continue;
+      result.set(person.id, person);
+    }
+  }
+
   return [...result.values()];
 }
 
 export function getDepartmentFocusDefaultCollapsed(
   department: Department,
   people: Person[] = mockPeople,
+  allDepartments: Department[] = mockDepartments,
 ): Set<string> {
-  const members = getDepartmentFocusMembers(department, people);
+  const members = getDepartmentFocusMembers(department, people, allDepartments);
   const memberIds = new Set(members.map((m) => m.id));
   const childMap = buildDeptChildMap(members, memberIds);
   const headId = department.headId;
@@ -332,8 +269,9 @@ export function getDepartmentFocusDefaultCollapsed(
 export function getDepartmentFocusCollapsibleIds(
   department: Department,
   people: Person[] = mockPeople,
+  allDepartments: Department[] = mockDepartments,
 ): Set<string> {
-  const members = getDepartmentFocusMembers(department, people);
+  const members = getDepartmentFocusMembers(department, people, allDepartments);
   const memberIds = new Set(members.map((m) => m.id));
   const childMap = buildDeptChildMap(members, memberIds);
   const headId = department.headId;
@@ -352,8 +290,9 @@ export function buildDepartmentFocusGraph(
   department: Department,
   collapsed: Set<string>,
   people: Person[] = mockPeople,
+  allDepartments: Department[] = mockDepartments,
 ): { nodes: OrgChartNode[]; edges: Edge[]; head: Person | null } {
-  const members = getDepartmentFocusMembers(department, people);
+  const members = getDepartmentFocusMembers(department, people, allDepartments);
   const memberIds = new Set(members.map((m) => m.id));
   const byId = new Map(members.map((p) => [p.id, p]));
   const head = department.headId ? (byId.get(department.headId) ?? null) : null;

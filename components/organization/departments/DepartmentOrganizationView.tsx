@@ -16,8 +16,8 @@ export function DepartmentOrganizationView({
   return (
     <div className="mt-4">
       <p className="max-w-2xl text-sm text-pcg-text-secondary">
-        Vista per funzione organizzativa a partire dal CEO. Clicca un
-        dipartimento per aprirne l’organigramma interno.
+      Vista per funzione organizzativa a partire dal CEO. Solo dipartimenti:
+      clicca una card per aprirne l’organigramma interno (persone e staff).
       </p>
       <DepartmentOverviewFlow people={people} departments={departments} />
     </div>

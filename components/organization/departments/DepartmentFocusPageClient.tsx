@@ -78,7 +78,7 @@ function DepartmentFocusContent({
         </p>
         <a
           href="/organizzazione?vista=dipartimenti"
-          className="text-sm font-medium text-pcg-primary hover:text-pcg-primary-hover"
+          className="mt-4 inline-flex items-center gap-1.5 rounded-pcg border border-pcg-border bg-pcg-bg px-3 py-1.5 text-sm font-medium text-pcg-primary hover:border-pcg-primary"
         >
           ← Torna all’organigramma
         </a>
@@ -86,7 +86,7 @@ function DepartmentFocusContent({
     );
   }
 
-  const members = getDepartmentFocusMembers(department, people);
+  const members = getDepartmentFocusMembers(department, people, departments);
   const head =
     members.find((p) => p.id === department.headId) ??
     people.find((p) => p.id === department.headId) ??
@@ -95,7 +95,11 @@ function DepartmentFocusContent({
   return (
     <>
       <DepartmentFocusHeader department={department} head={head} />
-      <DepartmentFocusFlow department={department} people={people} />
+      <DepartmentFocusFlow
+        department={department}
+        people={people}
+        departments={departments}
+      />
     </>
   );
 }

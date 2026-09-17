@@ -31,17 +31,19 @@ const nodeTypes = {
 type DepartmentFocusFlowProps = {
   department: Department;
   people: Person[];
+  departments: Department[];
 };
 
 function DepartmentFocusFlowInner({
   department,
   people,
+  departments,
 }: DepartmentFocusFlowProps) {
   const router = useRouter();
   const { fitView } = useReactFlow();
   const defaultCollapsed = useMemo(
-    () => getDepartmentFocusDefaultCollapsed(department, people),
-    [department, people],
+    () => getDepartmentFocusDefaultCollapsed(department, people, departments),
+    [department, people, departments],
   );
   const [collapsedOverride, setCollapsedOverride] = useState<Set<string> | null>(
     null,
@@ -49,13 +51,18 @@ function DepartmentFocusFlowInner({
   const collapsed = collapsedOverride ?? defaultCollapsed;
 
   const { nodes, edges, head } = useMemo(() => {
-    const graph = buildDepartmentFocusGraph(department, collapsed, people);
+    const graph = buildDepartmentFocusGraph(
+      department,
+      collapsed,
+      people,
+      departments,
+    );
     const layouted = getLayoutedElements(graph.nodes, graph.edges);
     return {
       ...layouted,
       head: graph.head,
     };
-  }, [department, collapsed, people]);
+  }, [department, collapsed, people, departments]);
 
   useEffect(() => {
     if (nodes.length === 0) return;
@@ -67,7 +74,11 @@ function DepartmentFocusFlowInner({
 
   const toggleExpand = useCallback(
     (nodeId: string) => {
-      const collapsible = getDepartmentFocusCollapsibleIds(department, people);
+      const collapsible = getDepartmentFocusCollapsibleIds(
+        department,
+        people,
+        departments,
+      );
       if (!collapsible.has(nodeId)) return;
       setCollapsedOverride((prev) => {
         const base = prev ?? defaultCollapsed;
@@ -77,7 +88,7 @@ function DepartmentFocusFlowInner({
         return next;
       });
     },
-    [department, people, defaultCollapsed],
+    [department, people, departments, defaultCollapsed],
   );
 
   const expandAll = useCallback(() => {
@@ -86,9 +97,9 @@ function DepartmentFocusFlowInner({
 
   const collapseAll = useCallback(() => {
     setCollapsedOverride(
-      getDepartmentFocusCollapsibleIds(department, people),
+      getDepartmentFocusCollapsibleIds(department, people, departments),
     );
-  }, [department, people]);
+  }, [department, people, departments]);
 
   const openProfile = useCallback(
     (personId: string) => {
@@ -121,10 +132,13 @@ function DepartmentFocusFlowInner({
 
   if (!head || nodes.length === 0) {
     return (
-      <p className="mt-4 text-sm text-pcg-text-secondary">
-        Nessuna struttura da mostrare per questo dipartimento. Verifica che sia
-        assegnato un responsabile.
-      </p>
+      <div className="mt-4 overflow-hidden rounded-pcg border border-pcg-border bg-pcg-bg">
+        <ChartBackBar />
+        <p className="px-4 py-6 text-sm text-pcg-text-secondary">
+          Nessuna struttura da mostrare per questo dipartimento. Verifica che
+          sia assegnato un responsabile.
+        </p>
+      </div>
     );
   }
 
@@ -136,7 +150,8 @@ function DepartmentFocusFlowInner({
           onCollapseAll={collapseAll}
         />
         <div className="overflow-hidden rounded-pcg border border-pcg-border bg-pcg-bg">
-          <div className="pcg-org-flow relative h-[min(70vh,640px)] min-h-[420px] w-full">
+          <ChartBackBar />
+          <div className="pcg-org-flow relative h-[min(70vh,640px)] min-h-[420px] w-full border-t border-pcg-border">
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -164,6 +179,19 @@ function DepartmentFocusFlowInner({
   );
 }
 
+function ChartBackBar() {
+  return (
+    <div className="flex items-center border-b border-pcg-border bg-pcg-bg-subtle px-3 py-2.5 sm:px-4">
+      <Link
+        href="/organizzazione?vista=dipartimenti"
+        className="inline-flex items-center gap-1.5 rounded-pcg border border-pcg-border bg-pcg-bg px-3 py-1.5 text-sm font-medium text-pcg-primary transition-colors hover:border-pcg-primary hover:bg-pcg-bg hover:text-pcg-primary-hover"
+      >
+        ← Torna all’organigramma
+      </Link>
+    </div>
+  );
+}
+
 export function DepartmentFocusFlow(props: DepartmentFocusFlowProps) {
   return (
     <ReactFlowProvider>
@@ -180,37 +208,29 @@ export function DepartmentFocusHeader({
   head: Person | null;
 }) {
   return (
-    <div className="mt-6 space-y-4">
-      <Link
-        href="/organizzazione?vista=dipartimenti"
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-pcg-primary hover:text-pcg-primary-hover"
-      >
-        ← Torna all’organigramma
-      </Link>
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-pcg-text-muted">
-          Focus dipartimento
+    <div className="mt-6">
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-pcg-text-muted">
+        Focus dipartimento
+      </p>
+      <h2 className="mt-1 text-2xl font-semibold tracking-tight text-pcg-ink">
+        {department.name}
+      </h2>
+      {head ? (
+        <p className="mt-2 text-sm text-pcg-text-secondary">
+          Responsabile:{" "}
+          <Link
+            href={`/persone/${head.id}`}
+            className="font-medium text-pcg-primary hover:text-pcg-primary-hover"
+          >
+            {getPersonFullName(head)}
+          </Link>
+          <span className="text-pcg-text-muted"> · {head.role}</span>
         </p>
-        <h2 className="mt-1 text-2xl font-semibold tracking-tight text-pcg-ink">
-          {department.name}
-        </h2>
-        {head ? (
-          <p className="mt-2 text-sm text-pcg-text-secondary">
-            Responsabile:{" "}
-            <Link
-              href={`/persone/${head.id}`}
-              className="font-medium text-pcg-primary hover:text-pcg-primary-hover"
-            >
-              {getPersonFullName(head)}
-            </Link>
-            <span className="text-pcg-text-muted"> · {head.role}</span>
-          </p>
-        ) : (
-          <p className="mt-2 text-sm text-pcg-text-secondary">
-            Responsabile non assegnato.
-          </p>
-        )}
-      </div>
+      ) : (
+        <p className="mt-2 text-sm text-pcg-text-secondary">
+          Responsabile non assegnato.
+        </p>
+      )}
     </div>
   );
 }
