@@ -36,27 +36,37 @@ export type PersonOrgNodeData = {
   isAreaManager: boolean;
 };
 
-/** Thin staff-band title — not interactive. */
-export type OrgStaffLabelNodeData = {
-  kind: "group";
+/** Text-only Staff band title — not interactive. */
+export type OrgLabelNodeData = {
+  kind: "label";
   label: string;
   parentPersonId: string;
 };
 
-/** Clickable virtual department in the Staff band. */
+/** Invisible junction for staff comb edges. */
+export type OrgHubNodeData = {
+  kind: "hub";
+  parentPersonId: string;
+};
+
 export type OrgDepartmentNodeData = {
   kind: "department";
   label: string;
   departmentId: string;
   parentPersonId: string;
+  hasChildren: boolean;
+  isExpanded: boolean;
+  canCollapse: boolean;
 };
 
 export type OrgPersonNode = Node<PersonOrgNodeData, "person">;
-export type OrgStaffLabelNode = Node<OrgStaffLabelNodeData, "group">;
+export type OrgLabelNode = Node<OrgLabelNodeData, "label">;
+export type OrgHubNode = Node<OrgHubNodeData, "hub">;
 export type OrgDepartmentNode = Node<OrgDepartmentNodeData, "department">;
 export type OrgChartNode =
   | OrgPersonNode
-  | OrgStaffLabelNode
+  | OrgLabelNode
+  | OrgHubNode
   | OrgDepartmentNode;
 
 export type ClinicLike = {
@@ -192,78 +202,16 @@ export function getChildMapForMode(
   return buildChildMap(getPeopleForMode(mode, people));
 }
 
-export function getDefaultCollapsedIds(
-  mode: OrgMode,
-  people: Person[] = mockPeople,
-): Set<string> {
-  const scoped = getPeopleForMode(mode, people);
-  const childMap = buildChildMap(scoped);
-  const { roots } = getDiagramRoots(mode, scoped, people);
-  const rootIds = new Set(roots.map((r) => r.id));
-  const collapsed = new Set<string>();
-
-  for (const person of scoped) {
-    if (rootIds.has(person.id)) continue;
-    if ((childMap.get(person.id) ?? []).length > 0) {
-      collapsed.add(person.id);
-    }
-  }
-
-  return collapsed;
-}
-
-export function getAllCollapsibleIds(
-  mode: OrgMode,
-  people: Person[] = mockPeople,
-): Set<string> {
-  const scoped = getPeopleForMode(mode, people);
-  const childMap = buildChildMap(scoped);
-  const { roots } = getDiagramRoots(mode, scoped, people);
-  const rootIds = new Set(roots.map((r) => r.id));
-  const ids = new Set<string>();
-  for (const [id, children] of childMap) {
-    if (children.length > 0 && !rootIds.has(id)) ids.add(id);
-  }
-  return ids;
-}
-
-function collectVisibleIds(
-  roots: Person[],
-  childMap: Map<string, Person[]>,
-  collapsed: Set<string>,
-): Set<string> {
-  const rootIds = new Set(roots.map((r) => r.id));
-  const visible = new Set<string>();
-
-  const visit = (person: Person) => {
-    if (visible.has(person.id)) return;
-    visible.add(person.id);
-    if (collapsed.has(person.id) && !rootIds.has(person.id)) return;
-    for (const child of childMap.get(person.id) ?? []) {
-      visit(child);
-    }
-  };
-
-  for (const root of roots) {
-    visit(root);
-  }
-
-  return visible;
-}
-
-function metaLabelFor(person: Person, mode: OrgMode): string {
-  if (mode === "network") {
-    return getPersonDistrictLabel(person) ?? getPersonDepartmentLabel(person);
-  }
-  return getPersonDepartmentLabel(person);
-}
-
-function staffLabelNodeId(parentId: string): string {
-  return `group-staff-${parentId}`;
-}
-
 export function virtualDepartmentNodeId(departmentId: string): string {
   return `virtual-department-${departmentId}`;
+}
+
+export function staffHubNodeId(parentId: string): string {
+  return `staff-hub-${parentId}`;
+}
+
+export function staffLabelNodeId(parentId: string): string {
+  return `staff-label-${parentId}`;
 }
 
 export function staffGroupLabel(manager: Person): string {
@@ -279,12 +227,6 @@ export function staffGroupLabel(manager: Person): string {
   return "Staff";
 }
 
-/**
- * Staff department under this manager:
- * - organizationalPlacement === staff
- * - headId === manager
- * - NOT the manager's own primary department (e.g. CEO under Mirko)
- */
 function staffDepartmentsForManager(
   manager: Person,
   departments: Department[],
@@ -295,17 +237,166 @@ function staffDepartmentsForManager(
       return false;
     }
     if (department.headId !== manager.id) return false;
-    // Own primary function (CEO) must not appear under the person.
     if (manager.departmentId === department.id) return false;
     return true;
   });
 }
 
+/** First-level people inside a staff department (head excluded). */
+function departmentInnerMembers(
+  department: Department,
+  managerId: string,
+  people: Person[],
+): Person[] {
+  return people
+    .filter(
+      (p) =>
+        p.departmentId === department.id &&
+        p.managerId === managerId &&
+        p.id !== managerId,
+    )
+    .sort((a, b) =>
+      `${a.lastName} ${a.firstName}`.localeCompare(
+        `${b.lastName} ${b.firstName}`,
+        "it",
+      ),
+    );
+}
+
+function metaLabelFor(person: Person, mode: OrgMode): string {
+  if (mode === "network") {
+    return getPersonDistrictLabel(person) ?? getPersonDepartmentLabel(person);
+  }
+  return getPersonDepartmentLabel(person);
+}
+
+export function getDefaultCollapsedIds(
+  mode: OrgMode,
+  people: Person[] = mockPeople,
+  departments: Department[] = mockDepartments,
+): Set<string> {
+  const scoped = getPeopleForMode(mode, people);
+  const childMap = buildChildMap(scoped);
+  const { roots } = getDiagramRoots(mode, scoped, people);
+  const rootIds = new Set(roots.map((r) => r.id));
+  const collapsed = new Set<string>();
+
+  for (const person of scoped) {
+    if (rootIds.has(person.id)) continue;
+    if ((childMap.get(person.id) ?? []).length > 0) {
+      collapsed.add(person.id);
+    }
+  }
+
+  if (mode === "organization") {
+    for (const root of roots) {
+      for (const dept of staffDepartmentsForManager(root, departments)) {
+        const members = departmentInnerMembers(dept, root.id, scoped);
+        if (members.length > 0) {
+          collapsed.add(virtualDepartmentNodeId(dept.id));
+        }
+      }
+    }
+  }
+
+  return collapsed;
+}
+
+export function getAllCollapsibleIds(
+  mode: OrgMode,
+  people: Person[] = mockPeople,
+  departments: Department[] = mockDepartments,
+): Set<string> {
+  const scoped = getPeopleForMode(mode, people);
+  const childMap = buildChildMap(scoped);
+  const { roots } = getDiagramRoots(mode, scoped, people);
+  const rootIds = new Set(roots.map((r) => r.id));
+  const ids = new Set<string>();
+
+  for (const [id, children] of childMap) {
+    if (children.length > 0 && !rootIds.has(id)) ids.add(id);
+  }
+
+  if (mode === "organization") {
+    for (const person of scoped) {
+      for (const dept of staffDepartmentsForManager(person, departments)) {
+        if (departmentInnerMembers(dept, person.id, scoped).length > 0) {
+          ids.add(virtualDepartmentNodeId(dept.id));
+        }
+      }
+    }
+  }
+
+  return ids;
+}
+
 /**
- * Builds React Flow nodes/edges.
- * Organization mode: Staff band between manager and line reports.
- * Network mode: plain managerId tree (unchanged behaviour).
+ * Visible people: roots always expand first level; staff absorbed by a
+ * collapsed staff-department stay hidden until the department is expanded.
  */
+function collectVisibleIds(
+  mode: OrgMode,
+  roots: Person[],
+  childMap: Map<string, Person[]>,
+  collapsed: Set<string>,
+  departments: Department[],
+  people: Person[],
+): Set<string> {
+  const rootIds = new Set(roots.map((r) => r.id));
+  const visible = new Set<string>();
+  const byId = new Map(people.map((p) => [p.id, p]));
+
+  const absorbingDeptId = (
+    managerId: string,
+    child: Person,
+  ): string | null => {
+    if (mode !== "organization") return null;
+    const manager = byId.get(managerId);
+    if (!manager) return null;
+    // Anyone in a staff department headed by this manager is shown under
+    // that department card (not as a direct line/staff leaf of the manager).
+    const dept = staffDepartmentsForManager(manager, departments).find(
+      (d) => d.id === child.departmentId,
+    );
+    return dept ? virtualDepartmentNodeId(dept.id) : null;
+  };
+
+  const visit = (person: Person) => {
+    if (visible.has(person.id)) return;
+    visible.add(person.id);
+    if (collapsed.has(person.id) && !rootIds.has(person.id)) return;
+
+    for (const child of childMap.get(person.id) ?? []) {
+      const absorbedBy = absorbingDeptId(person.id, child);
+      if (absorbedBy && collapsed.has(absorbedBy)) {
+        continue;
+      }
+      visit(child);
+    }
+  };
+
+  for (const root of roots) {
+    visit(root);
+  }
+
+  // When a staff department is expanded, ensure its inner members (and their
+  // descendants) are visible even if the walk skipped them earlier.
+  if (mode === "organization") {
+    for (const person of people) {
+      for (const dept of staffDepartmentsForManager(person, departments)) {
+        const deptNodeId = virtualDepartmentNodeId(dept.id);
+        if (collapsed.has(deptNodeId)) continue;
+        if (!visible.has(person.id)) continue;
+        for (const member of departmentInnerMembers(dept, person.id, people)) {
+          visit(member);
+        }
+      }
+    }
+  }
+
+  return visible;
+}
+
 export function buildOrganizationGraph(
   mode: OrgMode,
   collapsed: Set<string>,
@@ -327,7 +418,14 @@ export function buildOrganizationGraph(
   const effectiveCollapsed = new Set(
     [...collapsed].filter((id) => !rootIds.has(id)),
   );
-  const visibleIds = collectVisibleIds(roots, childMap, effectiveCollapsed);
+  const visibleIds = collectVisibleIds(
+    mode,
+    roots,
+    childMap,
+    effectiveCollapsed,
+    departments,
+    scoped,
+  );
   const byId = new Map(scoped.map((p) => [p.id, p]));
 
   const clinicCountFor = (personId: string) => {
@@ -383,7 +481,11 @@ export function buildOrganizationGraph(
   const virtualIdsAdded = new Set<string>();
   const edgeIds = new Set<string>();
 
-  const pushEdge = (source: string, target: string) => {
+  const pushEdge = (
+    source: string,
+    target: string,
+    opts?: { staff?: boolean },
+  ) => {
     const id = `e-${source}-${target}`;
     if (edgeIds.has(id)) return;
     edgeIds.add(id);
@@ -393,53 +495,14 @@ export function buildOrganizationGraph(
       target,
       type: "smoothstep",
       animated: false,
+      data: opts?.staff ? { staff: true } : undefined,
+      style: opts?.staff
+        ? { stroke: "var(--pcg-border-strong, #94a3b8)" }
+        : undefined,
     });
   };
 
-  const addStaffLabel = (parentId: string, label: string) => {
-    const id = staffLabelNodeId(parentId);
-    if (virtualIdsAdded.has(id)) return id;
-    virtualIdsAdded.add(id);
-    nodes.push({
-      id,
-      type: "group",
-      position: { x: 0, y: 0 },
-      selectable: false,
-      draggable: false,
-      data: {
-        kind: "group",
-        label,
-        parentPersonId: parentId,
-      },
-    });
-    return id;
-  };
-
-  const addDepartmentNode = (
-    parentPersonId: string,
-    department: Department,
-  ) => {
-    const id = virtualDepartmentNodeId(department.id);
-    if (virtualIdsAdded.has(id)) return id;
-    virtualIdsAdded.add(id);
-    nodes.push({
-      id,
-      type: "department",
-      position: { x: 0, y: 0 },
-      style: { cursor: "pointer", pointerEvents: "auto" },
-      selectable: true,
-      draggable: false,
-      data: {
-        kind: "department",
-        label: department.name,
-        departmentId: department.id,
-        parentPersonId,
-      },
-    });
-    return id;
-  };
-
-  // Network: plain tree, no Staff banding.
+  // Network: plain tree.
   if (mode === "network") {
     for (const managerId of visibleIds) {
       if (effectiveCollapsed.has(managerId) && !rootIds.has(managerId)) continue;
@@ -452,18 +515,10 @@ export function buildOrganizationGraph(
         pushEdge(managerId, child.id);
       }
     }
-
-    const seenPerson = new Set<string>();
-    const uniqueNodes = nodes.filter((node) => {
-      if (node.type !== "person") return true;
-      if (seenPerson.has(node.id)) return false;
-      seenPerson.add(node.id);
-      return true;
-    });
-    return { nodes: uniqueNodes, edges, status, orphans };
+    return { nodes, edges, status, orphans };
   }
 
-  // Organization mode: Staff band between manager and line reports.
+  // Organization mode.
   for (const managerId of visibleIds) {
     if (effectiveCollapsed.has(managerId) && !rootIds.has(managerId)) continue;
     if (!idSet.has(managerId)) continue;
@@ -472,41 +527,108 @@ export function buildOrganizationGraph(
     if (!manager) continue;
 
     const children = (childMap.get(managerId) ?? []).filter(
-      (c) =>
-        visibleIds.has(c.id) && c.id !== managerId && personNodeIds.has(c.id),
+      (c) => c.id !== managerId,
     );
     const { lineReports, staffReports } = splitReports(children);
     const staffDepts = staffDepartmentsForManager(manager, departments);
-    const showStaff = staffReports.length > 0 || staffDepts.length > 0;
+    const staffDeptIds = new Set(staffDepts.map((d) => d.id));
+    const visibleLine = lineReports.filter(
+      (c) =>
+        visibleIds.has(c.id) &&
+        personNodeIds.has(c.id) &&
+        !staffDeptIds.has(c.departmentId ?? ""),
+    );
+    const looseStaff = staffReports.filter((p) => {
+      if (!visibleIds.has(p.id) || !personNodeIds.has(p.id)) return false;
+      return !staffDeptIds.has(p.departmentId ?? "");
+    });
+
+    const showStaff = looseStaff.length > 0 || staffDepts.length > 0;
 
     if (!showStaff) {
-      for (const child of lineReports) {
+      for (const child of visibleLine) {
         pushEdge(managerId, child.id);
       }
       continue;
     }
 
-    const staffLabelId = addStaffLabel(managerId, staffGroupLabel(manager));
-    pushEdge(managerId, staffLabelId);
+    const hubId = staffHubNodeId(managerId);
+    const labelId = staffLabelNodeId(managerId);
 
-    const staffPlaced = new Set<string>();
+    if (!virtualIdsAdded.has(hubId)) {
+      virtualIdsAdded.add(hubId);
+      nodes.push({
+        id: hubId,
+        type: "hub",
+        position: { x: 0, y: 0 },
+        selectable: false,
+        draggable: false,
+        data: { kind: "hub", parentPersonId: managerId },
+      });
+    }
+
+    if (!virtualIdsAdded.has(labelId)) {
+      virtualIdsAdded.add(labelId);
+      nodes.push({
+        id: labelId,
+        type: "label",
+        position: { x: 0, y: 0 },
+        selectable: false,
+        draggable: false,
+        data: {
+          kind: "label",
+          label: staffGroupLabel(manager),
+          parentPersonId: managerId,
+        },
+      });
+    }
+
+    pushEdge(managerId, hubId, { staff: true });
+
     for (const dept of staffDepts) {
-      const deptNodeId = addDepartmentNode(managerId, dept);
-      pushEdge(staffLabelId, deptNodeId);
-      for (const person of staffReports) {
-        if (person.departmentId !== dept.id) continue;
-        pushEdge(deptNodeId, person.id);
-        staffPlaced.add(person.id);
+      const deptNodeId = virtualDepartmentNodeId(dept.id);
+      const inner = departmentInnerMembers(dept, managerId, scoped);
+      const hasChildren = inner.length > 0;
+      const isExpanded = hasChildren
+        ? !effectiveCollapsed.has(deptNodeId)
+        : false;
+
+      if (!virtualIdsAdded.has(deptNodeId)) {
+        virtualIdsAdded.add(deptNodeId);
+        nodes.push({
+          id: deptNodeId,
+          type: "department",
+          position: { x: 0, y: 0 },
+          style: { cursor: "pointer", pointerEvents: "auto" },
+          selectable: true,
+          draggable: false,
+          data: {
+            kind: "department",
+            label: dept.name,
+            departmentId: dept.id,
+            parentPersonId: managerId,
+            hasChildren,
+            isExpanded,
+            canCollapse: hasChildren,
+          },
+        });
+      }
+
+      pushEdge(hubId, deptNodeId, { staff: true });
+
+      if (isExpanded) {
+        for (const member of inner) {
+          if (!personNodeIds.has(member.id)) continue;
+          pushEdge(deptNodeId, member.id);
+        }
       }
     }
 
-    for (const person of staffReports) {
-      if (staffPlaced.has(person.id)) continue;
-      pushEdge(staffLabelId, person.id);
+    for (const person of looseStaff) {
+      pushEdge(hubId, person.id, { staff: true });
     }
 
-    // Line reports hang from the manager; layout stacks them below the Staff band.
-    for (const child of lineReports) {
+    for (const child of visibleLine) {
       pushEdge(managerId, child.id);
     }
   }

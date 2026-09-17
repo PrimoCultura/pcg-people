@@ -15,7 +15,8 @@ import { AreaManagerDetails } from "@/components/organization/AreaManagerDetails
 import { OrganizationControls } from "@/components/organization/OrganizationControls";
 import { OrganizationFlowProvider } from "@/components/organization/OrganizationFlowContext";
 import { OrgDepartmentNode } from "@/components/organization/OrgDepartmentNode";
-import { OrgGroupNode } from "@/components/organization/OrgGroupNode";
+import { OrgHubNode } from "@/components/organization/OrgHubNode";
+import { OrgLabelNode } from "@/components/organization/OrgLabelNode";
 import { PersonOrgNode } from "@/components/organization/PersonOrgNode";
 import type { Clinic } from "@/data/clinic";
 import type { Department } from "@/data/department";
@@ -33,8 +34,9 @@ import {
 
 const nodeTypes = {
   person: PersonOrgNode,
-  group: OrgGroupNode,
   department: OrgDepartmentNode,
+  label: OrgLabelNode,
+  hub: OrgHubNode,
 } satisfies NodeTypes;
 
 type OrganizationFlowProps = {
@@ -53,8 +55,8 @@ function OrganizationFlowInner({
   const router = useRouter();
   const { fitView } = useReactFlow();
   const defaultCollapsed = useMemo(
-    () => getDefaultCollapsedIds(mode, people),
-    [mode, people],
+    () => getDefaultCollapsedIds(mode, people, departments),
+    [mode, people, departments],
   );
   const [collapsedOverride, setCollapsedOverride] = useState<Set<string> | null>(
     null,
@@ -87,18 +89,18 @@ function OrganizationFlowInner({
   }, [nodes, edges, fitView]);
 
   const toggleExpand = useCallback(
-    (personId: string) => {
-      const collapsible = getAllCollapsibleIds(mode, people);
-      if (!collapsible.has(personId)) return;
+    (nodeId: string) => {
+      const collapsible = getAllCollapsibleIds(mode, people, departments);
+      if (!collapsible.has(nodeId)) return;
       setCollapsedOverride((prev) => {
         const base = prev ?? defaultCollapsed;
         const next = new Set(base);
-        if (next.has(personId)) next.delete(personId);
-        else next.add(personId);
+        if (next.has(nodeId)) next.delete(nodeId);
+        else next.add(nodeId);
         return next;
       });
     },
-    [mode, people, defaultCollapsed],
+    [mode, people, departments, defaultCollapsed],
   );
 
   const expandAll = useCallback(() => {
@@ -106,8 +108,8 @@ function OrganizationFlowInner({
   }, []);
 
   const collapseAll = useCallback(() => {
-    setCollapsedOverride(getAllCollapsibleIds(mode, people));
-  }, [mode, people]);
+    setCollapsedOverride(getAllCollapsibleIds(mode, people, departments));
+  }, [mode, people, departments]);
 
   const openAreaManager = useCallback((personId: string) => {
     setSelectedAmId(personId);
@@ -120,10 +122,17 @@ function OrganizationFlowInner({
     [router],
   );
 
+  const openDepartment = useCallback(
+    (departmentId: string) => {
+      router.push(`/dipartimenti/${departmentId}`);
+    },
+    [router],
+  );
+
   const onNodeClick: NodeMouseHandler = useCallback(
     (_event, node: Node) => {
       const kind = (node.data as { kind?: string } | undefined)?.kind;
-      if (kind === "group") return;
+      if (kind === "label" || kind === "hub" || kind === "group") return;
       if (kind === "department") {
         const data = node.data as OrgDepartmentNodeData;
         if (!data.departmentId) return;
@@ -144,8 +153,9 @@ function OrganizationFlowInner({
       toggleExpand,
       openAreaManager,
       openProfile,
+      openDepartment,
     }),
-    [toggleExpand, openAreaManager, openProfile],
+    [toggleExpand, openAreaManager, openProfile, openDepartment],
   );
 
   const selectedPerson = selectedAmId

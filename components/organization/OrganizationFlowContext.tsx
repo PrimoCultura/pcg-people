@@ -3,9 +3,11 @@
 import { createContext, useContext } from "react";
 
 export type OrganizationFlowActions = {
-  toggleExpand: (personId: string) => void;
+  /** Expand/collapse person or virtual department node by graph node id. */
+  toggleExpand: (nodeId: string) => void;
   openAreaManager: (personId: string) => void;
   openProfile: (personId: string) => void;
+  openDepartment: (departmentId: string) => void;
 };
 
 const OrganizationFlowContext = createContext<OrganizationFlowActions | null>(

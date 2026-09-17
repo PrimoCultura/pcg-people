@@ -6,7 +6,11 @@ import { PersonAvatar } from "@/components/people/PersonAvatar";
 import { useOrganizationFlowActions } from "@/components/organization/OrganizationFlowContext";
 import type { PersonOrgNodeData } from "@/lib/organizationTree";
 
-function PersonOrgNodeComponent({ data }: NodeProps) {
+function PersonOrgNodeComponent({
+  data,
+  targetPosition = Position.Top,
+  sourcePosition = Position.Bottom,
+}: NodeProps) {
   const { toggleExpand, openAreaManager, openProfile } =
     useOrganizationFlowActions();
   const node = data as PersonOrgNodeData;
@@ -26,8 +30,8 @@ function PersonOrgNodeComponent({ data }: NodeProps) {
         openProfile(node.personId);
       }}
     >
-      <Handle type="target" position={Position.Top} />
-      <Handle type="source" position={Position.Bottom} />
+      <Handle type="target" position={targetPosition} />
+      <Handle type="source" position={sourcePosition} />
 
       <div className="flex gap-2">
         <div className="nodrag nopan flex min-w-0 flex-1 cursor-pointer gap-3">
