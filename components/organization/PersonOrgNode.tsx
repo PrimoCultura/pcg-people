@@ -34,51 +34,51 @@ function PersonOrgNodeComponent({
       <Handle type="source" position={sourcePosition} />
 
       <div className="flex gap-2">
-        <div className="nodrag nopan flex min-w-0 flex-1 cursor-pointer gap-3">
-          <span className="shrink-0" aria-hidden>
-            <PersonAvatar
-              person={{
-                firstName: node.firstName,
-                lastName: node.lastName,
-                photoUrl: node.photoUrl,
-              }}
-              size="sm"
-            />
+        <span className="shrink-0 self-start" aria-hidden>
+          <PersonAvatar
+            person={{
+              firstName: node.firstName,
+              lastName: node.lastName,
+              photoUrl: node.photoUrl,
+            }}
+            size="sm"
+          />
+        </span>
+
+        <div className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold leading-snug text-pcg-ink">
+            {fullName}
           </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-semibold text-pcg-ink">
-              {fullName}
-            </span>
-            <span className="mt-0.5 block truncate text-xs text-pcg-text-secondary">
-              {node.role}
-            </span>
-            <span className="mt-1 block truncate text-[0.65rem] font-medium uppercase tracking-wider text-pcg-text-muted">
+          <span className="mt-0.5 block truncate text-xs text-pcg-text-secondary">
+            {node.role}
+          </span>
+          <span className="mt-1 flex items-center gap-1">
+            <span className="min-w-0 flex-1 truncate text-[0.65rem] font-medium uppercase tracking-wider text-pcg-text-muted">
               {node.metaLabel}
             </span>
+            {node.canCollapse ? (
+              <button
+                type="button"
+                className="nodrag nopan inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-pcg border border-pcg-border text-sm leading-none text-pcg-primary hover:bg-pcg-bg-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pcg-focus"
+                aria-expanded={node.isExpanded}
+                aria-label={
+                  node.isExpanded
+                    ? `Comprimi i riporti di ${fullName}`
+                    : `Espandi i riporti di ${fullName}`
+                }
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  toggleExpand(node.personId);
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+              >
+                {node.isExpanded ? "−" : "+"}
+              </button>
+            ) : null}
           </span>
         </div>
-
-        {node.canCollapse ? (
-          <button
-            type="button"
-            className="nodrag nopan inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center self-start rounded-pcg border border-pcg-border text-sm text-pcg-primary hover:bg-pcg-bg-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pcg-focus"
-            aria-expanded={node.isExpanded}
-            aria-label={
-              node.isExpanded
-                ? `Comprimi i riporti di ${fullName}`
-                : `Espandi i riporti di ${fullName}`
-            }
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              toggleExpand(node.personId);
-            }}
-            onPointerDown={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-          >
-            {node.isExpanded ? "−" : "+"}
-          </button>
-        ) : null}
       </div>
 
       {node.isAreaManager && typeof node.clinicCount === "number" ? (
