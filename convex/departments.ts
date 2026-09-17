@@ -178,3 +178,45 @@ export const setActive = mutation({
     await ctx.db.patch(args.id, { active: args.active, updatedAt: now() });
   },
 });
+
+/**
+ * One-shot repair: mark Cultura as staff and point its head to the org root
+ * when missing/wrong — keeps the Staff AD → Cultura container working.
+ */
+export const repairStaffPlacements = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const timestamp = now();
+    const roots = (
+      await ctx.db
+        .query("people")
+        .withIndex("by_active", (q) => q.eq("active", true))
+        .collect()
+    ).filter((p) => p.isOrgRoot === true && !p.managerId);
+
+    const root = roots[0];
+    const cultura = await ctx.db
+      .query("departments")
+      .withIndex("by_slug", (q) => q.eq("slug", "cultura"))
+      .unique();
+
+    const patched: string[] = [];
+    if (cultura) {
+      const patch: {
+        organizationalPlacement: "staff";
+        updatedAt: number;
+        headId?: typeof cultura.headId;
+      } = {
+        organizationalPlacement: "staff",
+        updatedAt: timestamp,
+      };
+      if (root && cultura.headId !== root._id) {
+        patch.headId = root._id;
+      }
+      await ctx.db.patch(cultura._id, patch);
+      patched.push("cultura");
+    }
+
+    return { patched, rootId: root?._id ?? null };
+  },
+});

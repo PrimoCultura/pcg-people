@@ -20,6 +20,7 @@ type SeedDept = {
   tags: string[];
   order?: number;
   headOldId?: string;
+  organizationalPlacement?: "line" | "staff";
 };
 
 type SeedPerson = {
@@ -136,6 +137,7 @@ const DEPARTMENTS: SeedDept[] = [
     tags: ["cultura", "formazione", "academy", "engagement"],
     order: 4,
     headOldId: "p-003",
+    organizationalPlacement: "staff",
   },
   {
     oldId: "operations",
@@ -733,6 +735,7 @@ export const run = mutation({
         contactFor: dept.contactFor,
         tags: dept.tags,
         order: dept.order,
+        organizationalPlacement: dept.organizationalPlacement,
         active: true,
         createdAt: timestamp,
         updatedAt: timestamp,

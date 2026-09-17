@@ -228,21 +228,56 @@ export function staffGroupLabel(manager: Person): string {
 }
 
 /**
- * Staff departments headed by this manager — always shown as visual containers
- * under Staff, even when the department is also the manager's primary
- * departmentId (e.g. AD head of Cultura). The head person is never duplicated.
+ * Staff departments shown as visual containers under a manager's Staff comb.
+ *
+ * A department appears when:
+ * - it is headed by this manager and marked (or inferred as) staff, OR
+ * - this manager has staff reports who belong to that department
+ *   (so Cultura always wraps Andrea even if placement was never saved in Convex)
+ *
+ * The head person is never listed as a member.
  */
 function staffDepartmentsForManager(
   manager: Person,
   departments: Department[],
+  people: Person[],
 ): Department[] {
-  return departments.filter((department) => {
-    if (department.id === "network") return false;
-    if (getDepartmentOrganizationalPlacement(department) !== "staff") {
-      return false;
+  const byId = new Map(departments.map((d) => [d.id, d]));
+  const result = new Map<string, Department>();
+
+  for (const department of departments) {
+    if (department.id === "network") continue;
+    if (department.headId !== manager.id) continue;
+
+    if (getDepartmentOrganizationalPlacement(department) === "staff") {
+      result.set(department.id, department);
+      continue;
     }
-    return department.headId === manager.id;
-  });
+
+    const hasStaffMember = people.some(
+      (p) =>
+        p.departmentId === department.id &&
+        p.managerId === manager.id &&
+        p.id !== manager.id &&
+        getReportingType(p) === "staff",
+    );
+    if (hasStaffMember) result.set(department.id, department);
+  }
+
+  // Group this manager's staff reports into their department cards.
+  for (const person of people) {
+    if (person.managerId !== manager.id) continue;
+    if (person.id === manager.id) continue;
+    if (getReportingType(person) !== "staff") continue;
+    if (!person.departmentId) continue;
+    const department = byId.get(person.departmentId);
+    if (!department || department.id === "network") continue;
+    result.set(department.id, department);
+  }
+
+  return [...result.values()].sort((a, b) =>
+    a.name.localeCompare(b.name, "it"),
+  );
 }
 
 /** First-level people inside a staff department (head excluded). */
@@ -293,7 +328,7 @@ export function getDefaultCollapsedIds(
 
   if (mode === "organization") {
     for (const root of roots) {
-      for (const dept of staffDepartmentsForManager(root, departments)) {
+      for (const dept of staffDepartmentsForManager(root, departments, scoped)) {
         const members = departmentInnerMembers(dept, root.id, scoped);
         if (members.length > 0) {
           collapsed.add(virtualDepartmentNodeId(dept.id));
@@ -322,7 +357,7 @@ export function getAllCollapsibleIds(
 
   if (mode === "organization") {
     for (const person of scoped) {
-      for (const dept of staffDepartmentsForManager(person, departments)) {
+      for (const dept of staffDepartmentsForManager(person, departments, scoped)) {
         if (departmentInnerMembers(dept, person.id, scoped).length > 0) {
           ids.add(virtualDepartmentNodeId(dept.id));
         }
@@ -358,7 +393,7 @@ function collectVisibleIds(
     if (!manager) return null;
     // Anyone in a staff department headed by this manager is shown under
     // that department card (not as a direct line/staff leaf of the manager).
-    const dept = staffDepartmentsForManager(manager, departments).find(
+    const dept = staffDepartmentsForManager(manager, departments, people).find(
       (d) => d.id === child.departmentId,
     );
     return dept ? virtualDepartmentNodeId(dept.id) : null;
@@ -386,7 +421,7 @@ function collectVisibleIds(
   // descendants) are visible even if the walk skipped them earlier.
   if (mode === "organization") {
     for (const person of people) {
-      for (const dept of staffDepartmentsForManager(person, departments)) {
+      for (const dept of staffDepartmentsForManager(person, departments, people)) {
         const deptNodeId = virtualDepartmentNodeId(dept.id);
         if (collapsed.has(deptNodeId)) continue;
         if (!visible.has(person.id)) continue;
@@ -533,7 +568,7 @@ export function buildOrganizationGraph(
       (c) => c.id !== managerId,
     );
     const { lineReports, staffReports } = splitReports(children);
-    const staffDepts = staffDepartmentsForManager(manager, departments);
+    const staffDepts = staffDepartmentsForManager(manager, departments, scoped);
     const staffDeptIds = new Set(staffDepts.map((d) => d.id));
     const visibleLine = lineReports.filter(
       (c) =>
