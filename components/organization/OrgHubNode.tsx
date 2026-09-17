@@ -4,7 +4,9 @@ import { memo } from "react";
 import { Handle, Position } from "@xyflow/react";
 
 /**
- * Invisible junction for the Staff comb (horizontal bus → vertical riser).
+ * Invisible Staff comb junction.
+ * Edges enter from the left (bus) and leave downward along the riser;
+ * stubs reach member cards on the outside (right).
  */
 function OrgHubNodeComponent() {
   return (

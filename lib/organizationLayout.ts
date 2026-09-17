@@ -49,8 +49,9 @@ function collectDescendants(rootId: string, edges: Edge[]): Set<string> {
 }
 
 /**
- * Staff comb: label above a horizontal bus ending in a vertical riser (hub).
- * Members hang to the left of the riser with short horizontal stubs.
+ * Staff comb (right side):
+ * label above horizontal bus → vertical riser (hub) near the chart →
+ * short stubs outward → person/department cards on the outside.
  */
 function applyStaffCombLayout<N extends Node, E extends Edge>(
   nodes: N[],
@@ -79,7 +80,8 @@ function applyStaffCombLayout<N extends Node, E extends Edge>(
 
     const managerSize = sizeForNode(manager);
     const busY = manager.position.y + managerSize.height + STAFF_BUS_Y;
-    const hubX = manager.position.x + managerSize.width + STAFF_OFFSET_X + 160;
+    // Montante vicino all'organigramma (lato interno del pettine).
+    const hubX = manager.position.x + managerSize.width + STAFF_OFFSET_X;
     const hubY = busY;
 
     byId.set(node.id, {
@@ -95,7 +97,7 @@ function applyStaffCombLayout<N extends Node, E extends Edge>(
       byId.set(labelId, {
         ...label,
         position: {
-          x: manager.position.x + managerSize.width + STAFF_OFFSET_X,
+          x: hubX,
           y: hubY - LABEL_HEIGHT - 8,
         },
         targetPosition: Position.Top,
@@ -107,7 +109,8 @@ function applyStaffCombLayout<N extends Node, E extends Edge>(
     for (const id of memberIds) {
       const n = byId.get(id)!;
       const { width, height } = sizeForNode(n);
-      const memberX = hubX - STAFF_STUB - width;
+      // Stub verso l'esterno: card a destra del montante.
+      const memberX = hubX + STAFF_STUB;
       const memberY = cursorY;
       const oldPos = n.position;
       const dx = memberX - oldPos.x;
@@ -116,7 +119,7 @@ function applyStaffCombLayout<N extends Node, E extends Edge>(
       byId.set(id, {
         ...n,
         position: { x: memberX, y: memberY },
-        targetPosition: Position.Right,
+        targetPosition: Position.Left,
         sourcePosition: Position.Bottom,
       });
 
@@ -145,6 +148,7 @@ function applyStaffCombLayout<N extends Node, E extends Edge>(
         subtreeBottom = Math.max(subtreeBottom, d.position.y + size.height);
       }
       cursorY = subtreeBottom + STAFF_GAP_Y;
+      void width;
     }
   }
 

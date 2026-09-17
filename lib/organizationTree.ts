@@ -227,6 +227,11 @@ export function staffGroupLabel(manager: Person): string {
   return "Staff";
 }
 
+/**
+ * Staff departments headed by this manager — always shown as visual containers
+ * under Staff, even when the department is also the manager's primary
+ * departmentId (e.g. AD head of Cultura). The head person is never duplicated.
+ */
 function staffDepartmentsForManager(
   manager: Person,
   departments: Department[],
@@ -236,9 +241,7 @@ function staffDepartmentsForManager(
     if (getDepartmentOrganizationalPlacement(department) !== "staff") {
       return false;
     }
-    if (department.headId !== manager.id) return false;
-    if (manager.departmentId === department.id) return false;
-    return true;
+    return department.headId === manager.id;
   });
 }
 
