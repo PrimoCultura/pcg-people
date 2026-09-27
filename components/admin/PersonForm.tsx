@@ -434,17 +434,36 @@ export function PersonForm({ personId }: PersonFormProps) {
         </Field>
       </div>
 
-      {state.type === "network" ? (
+      <div className="space-y-3 rounded-pcg border border-pcg-border bg-pcg-bg-subtle p-4">
+        <div>
+          <p className="text-sm font-medium text-pcg-ink">Ruolo Network</p>
+          <p className="mt-1 text-xs leading-relaxed text-pcg-text-muted">
+            Necessario per organigramma Network e per assegnare le cliniche.
+            Anche chi è in HQ (es. Area Manager Sales) deve avere qui
+            «area-manager» e il distretto di competenza.
+          </p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Network role">
             <select
               value={state.networkRole}
-              onChange={(e) =>
-                set("networkRole", e.target.value as FormState["networkRole"])
-              }
+              onChange={(e) => {
+                const networkRole = e.target.value as FormState["networkRole"];
+                setForm({
+                  ...state,
+                  networkRole,
+                  districtId:
+                    networkRole === "district-manager" ||
+                    networkRole === "area-manager"
+                      ? state.districtId
+                      : "",
+                });
+                setMessage(null);
+                setError(null);
+              }}
               className={inputClass}
             >
-              <option value="">—</option>
+              <option value="">Nessuno</option>
               <option value="head">head</option>
               <option value="district-manager">district-manager</option>
               <option value="area-manager">area-manager</option>
@@ -462,13 +481,20 @@ export function PersonForm({ personId }: PersonFormProps) {
                 {(districts ?? []).map((d) => (
                   <option key={d._id} value={d._id}>
                     {d.name}
+                    {d.active === false ? " (disattivo)" : ""}
                   </option>
                 ))}
               </select>
+              {(districts ?? []).length === 0 ? (
+                <p className="mt-1.5 text-xs text-amber-800">
+                  Nessun distretto in anagrafica. Creane uno in Admin → Distretti
+                  (serve prima un District Manager con network role).
+                </p>
+              ) : null}
             </Field>
           )}
         </div>
-      ) : null}
+      </div>
 
       <Field label="Descrizione breve">
         <textarea

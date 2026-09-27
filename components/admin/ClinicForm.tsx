@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "convex/react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { api } from "@/convex/_generated/api";
@@ -95,14 +96,24 @@ export function ClinicForm({ clinicId }: { clinicId?: Id<"clinics"> }) {
     setError(null);
   };
 
-  const amOptions = (people as ConvexPersonDoc[])
-    .filter(
-      (p) =>
-        p.active &&
-        p.networkRole === "area-manager" &&
-        (!state.districtId || p.districtId === state.districtId),
-    )
+  const activeDistricts = districts.filter((d) => d.active);
+  const districtOptions =
+    activeDistricts.length > 0 ? activeDistricts : districts;
+
+  const allAreaManagers = (people as ConvexPersonDoc[])
+    .filter((p) => p.active && p.networkRole === "area-manager")
     .map(mapConvexPerson);
+
+  const amOptions = allAreaManagers.filter(
+    (p) => !state.districtId || p.districtId === state.districtId,
+  );
+
+  const amWithoutDistrict = allAreaManagers.filter((p) => !p.districtId);
+  const amInOtherDistricts = state.districtId
+    ? allAreaManagers.filter(
+        (p) => p.districtId && p.districtId !== state.districtId,
+      )
+    : [];
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -201,16 +212,33 @@ export function ClinicForm({ clinicId }: { clinicId?: Id<"clinics"> }) {
               districtId: e.target.value,
               areaManagerId: "",
             });
+            setMessage(null);
+            setError(null);
           }}
         >
           <option value="">Seleziona…</option>
-          {districts.map((d) => (
+          {districtOptions.map((d) => (
             <option key={d._id} value={d._id}>
               {d.name}
+              {!d.active ? " (disattivo)" : ""}
             </option>
           ))}
         </select>
       </label>
+      {districtOptions.length === 0 ? (
+        <p
+          className="rounded-pcg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          role="status"
+        >
+          Nessun distretto in anagrafica. I Team «District Manager» in Sales non
+          bastano: crea i distretti in{" "}
+          <Link href="/admin/distretti/nuovo" className="underline">
+            Admin → Distretti
+          </Link>
+          . Serve prima una persona con Network role «district-manager».
+        </p>
+      ) : null}
+
       <label className="block text-sm font-medium">
         Area Manager
         <select
@@ -218,15 +246,42 @@ export function ClinicForm({ clinicId }: { clinicId?: Id<"clinics"> }) {
           className={inputClass}
           value={state.areaManagerId}
           onChange={(e) => set("areaManagerId", e.target.value)}
+          disabled={!state.districtId && amOptions.length === 0}
         >
           <option value="">Seleziona…</option>
           {amOptions.map((p) => (
             <option key={p.id} value={p.id}>
               {getPersonFullName(p)} — {p.role}
+              {p.districtLabel ? ` (${p.districtLabel})` : ""}
             </option>
           ))}
         </select>
       </label>
+      {state.districtId && amOptions.length === 0 ? (
+        <p
+          className="rounded-pcg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          role="status"
+        >
+          Nessun Area Manager per questo distretto.
+          {allAreaManagers.length === 0
+            ? " Nelle anagrafiche nessuno ha Network role «area-manager» (il titolo di ruolo non basta)."
+            : null}
+          {amWithoutDistrict.length > 0
+            ? ` ${amWithoutDistrict.length} Area Manager senza distretto assegnato: impostalo nella scheda persona.`
+            : null}
+          {amInOtherDistricts.length > 0
+            ? ` ${amInOtherDistricts.length} Area Manager sono collegati ad altri distretti.`
+            : null}{" "}
+          Apri la persona in Admin → Persone, imposta Network role =
+          area-manager e il Distretto corretto.
+        </p>
+      ) : null}
+      {!state.districtId && allAreaManagers.length === 0 ? (
+        <p className="text-xs text-pcg-text-muted">
+          Per vedere gli Area Manager: nelle anagrafiche imposta Network role =
+          «area-manager» e il Distretto (anche se il tipo persona resta HQ).
+        </p>
+      ) : null}
       <label className="block text-sm font-medium">
         Ordine
         <input
