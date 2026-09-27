@@ -13,6 +13,12 @@ import {
 } from "@/data/types";
 import { getPersonDepartmentLabel } from "@/lib/personLabels";
 import {
+  buildChildTeamsByParent,
+  buildTeamParentMap,
+  nestedTeamsUnderPerson,
+  topLevelTeams,
+} from "@/lib/teamHierarchy";
+import {
   virtualDepartmentNodeId,
   virtualTeamNodeId,
   type OrgChartNode,
@@ -300,9 +306,49 @@ export function getDepartmentFocusDefaultCollapsed(
   const collapsed = new Set<string>();
 
   if (deptTeams.length > 0) {
+    const members = getDepartmentFocusMembers(
+      department,
+      people,
+      allDepartments,
+    );
+    const allPeopleById = new Map(people.map((p) => [p.id, p]));
+    const parentMap = buildTeamParentMap(deptTeams, allPeopleById);
+    const childTeamsByParent = buildChildTeamsByParent(deptTeams, parentMap);
+
     for (const team of deptTeams) {
       collapsed.add(virtualTeamNodeId(team.id));
     }
+
+    // Persons who head a nested team start collapsed so "+" reveals the team.
+    for (const [, childTeams] of childTeamsByParent) {
+      for (const child of childTeams) {
+        if (child.headId && child.headId !== department.headId) {
+          collapsed.add(child.headId);
+        }
+      }
+    }
+
+    for (const team of topLevelTeams(deptTeams, parentMap)) {
+      const teamMembers = members.filter((m) => m.teamId === team.id);
+      const visibleSet = new Set(teamMembers.map((m) => m.id));
+      if (team.headId && team.headId !== department.headId) {
+        visibleSet.add(team.headId);
+      }
+      const childMap = buildDeptChildMap(
+        members.filter((m) => visibleSet.has(m.id)),
+        visibleSet,
+      );
+      for (const [id, children] of childMap) {
+        if (
+          children.length > 0 &&
+          id !== team.headId &&
+          id !== department.headId
+        ) {
+          collapsed.add(id);
+        }
+      }
+    }
+
     return collapsed;
   }
 
@@ -334,13 +380,29 @@ export function getDepartmentFocusCollapsibleIds(
       people,
       allDepartments,
     );
+    const allPeopleById = new Map(people.map((p) => [p.id, p]));
+    const parentMap = buildTeamParentMap(deptTeams, allPeopleById);
+    const childTeamsByParent = buildChildTeamsByParent(deptTeams, parentMap);
+
     for (const team of deptTeams) {
       const teamMembers = members.filter((m) => m.teamId === team.id);
       const showHeadAsPerson =
         Boolean(team.headId) && team.headId !== department.headId;
-      if (teamMembers.length > 0 || showHeadAsPerson) {
+      const nestedChildren = childTeamsByParent.get(team.id) ?? [];
+      if (
+        teamMembers.length > 0 ||
+        showHeadAsPerson ||
+        nestedChildren.length > 0
+      ) {
         ids.add(virtualTeamNodeId(team.id));
       }
+
+      for (const nested of nestedChildren) {
+        if (nested.headId && nested.headId !== department.headId) {
+          ids.add(nested.headId);
+        }
+      }
+
       const visibleSet = new Set(teamMembers.map((m) => m.id));
       if (showHeadAsPerson && team.headId) visibleSet.add(team.headId);
       const childMap = buildDeptChildMap(
@@ -380,8 +442,9 @@ export function getDepartmentFocusCollapsibleIds(
 
 /**
  * Focus chart: department head on top.
- * When teams exist: team cards under the head (expandable containers),
- * then internal managerId hierarchy. People without teamId stay under the head.
+ * When teams exist: top-level team cards under the head; nested teams hang
+ * under their head person (explicit parentTeamId or inferred from head.teamId).
+ * People without teamId stay under the head. managerId is never invented.
  * When no teams: legacy flat managerId tree (backward compatible).
  */
 export function buildDepartmentFocusGraph(
@@ -520,6 +583,11 @@ function buildTeamAwareDepartmentFocusGraph(
   const edges: Edge[] = [];
   const edgeIds = new Set<string>();
   const personNodesAdded = new Set<string>();
+  const teamNodesAdded = new Set<string>();
+
+  const parentMap = buildTeamParentMap(deptTeams, allPeopleById);
+  const childTeamsByParent = buildChildTeamsByParent(deptTeams, parentMap);
+  const rootTeams = topLevelTeams(deptTeams, parentMap);
 
   const pushEdge = (source: string, target: string) => {
     const id = `e-${source}-${target}`;
@@ -538,7 +606,23 @@ function buildTeamAwareDepartmentFocusGraph(
     person: Person,
     opts: { hasChildren: boolean; canCollapse: boolean; isExpanded: boolean },
   ) => {
-    if (personNodesAdded.has(person.id)) return;
+    if (personNodesAdded.has(person.id)) {
+      const existing = nodes.find((n) => n.id === person.id);
+      if (
+        existing &&
+        existing.type === "person" &&
+        opts.hasChildren &&
+        !existing.data.hasChildren
+      ) {
+        existing.data = {
+          ...existing.data,
+          hasChildren: true,
+          canCollapse: opts.canCollapse,
+          isExpanded: opts.isExpanded,
+        };
+      }
+      return;
+    }
     personNodesAdded.add(person.id);
     nodes.push({
       id: person.id,
@@ -558,14 +642,23 @@ function buildTeamAwareDepartmentFocusGraph(
     isExpanded: true,
   });
 
-  for (const team of deptTeams) {
+  const renderTeam = (
+    team: Team,
+    attachToNodeId: string,
+    attachUnderPersonId: string | null,
+  ) => {
+    if (teamNodesAdded.has(team.id)) return;
+    teamNodesAdded.add(team.id);
+
     const teamNodeId = virtualTeamNodeId(team.id);
     const teamMembers = members.filter((m) => m.teamId === team.id);
     const headPerson = team.headId
       ? (allPeopleById.get(team.headId) ?? null)
       : null;
     const headIsDeptHead = Boolean(team.headId && team.headId === head.id);
-    const showHeadAsPerson = Boolean(headPerson && !headIsDeptHead);
+    const showHeadAsPerson = Boolean(
+      headPerson && !headIsDeptHead && headPerson.id !== attachUnderPersonId,
+    );
 
     const displayMembers = teamMembers.filter((m) => m.id !== head.id);
     const subtreePeople = new Map(
@@ -575,16 +668,20 @@ function buildTeamAwareDepartmentFocusGraph(
       subtreePeople.set(headPerson.id, headPerson);
     }
 
-    const subtreeList = [...subtreePeople.values()];
-    const subtreeIds = new Set(subtreeList.map((p) => p.id));
-    const childMap = buildDeptChildMap(subtreeList, subtreeIds);
+    const nestedDirect = childTeamsByParent.get(team.id) ?? [];
+    let personRoots = [...subtreePeople.values()].filter(
+      (person) =>
+        !(person.managerId && subtreePeople.has(person.managerId)),
+    );
 
-    let roots = subtreeList.filter(
-      (person) => !(person.managerId && subtreeIds.has(person.managerId)),
+    const subtreeIds = new Set(subtreePeople.keys());
+    const childMap = buildDeptChildMap(
+      [...subtreePeople.values()],
+      subtreeIds,
     );
 
     if (showHeadAsPerson && headPerson && subtreeIds.has(headPerson.id)) {
-      const withoutHead = roots.filter((p) => p.id !== headPerson.id);
+      const withoutHead = personRoots.filter((p) => p.id !== headPerson.id);
       for (const orphan of withoutHead) {
         const list = childMap.get(headPerson.id) ?? [];
         if (!list.some((p) => p.id === orphan.id)) {
@@ -595,13 +692,24 @@ function buildTeamAwareDepartmentFocusGraph(
       for (const [key, list] of childMap) {
         childMap.set(key, sortPeople(list));
       }
-      roots = [headPerson];
+      personRoots = [headPerson];
     } else {
-      roots = sortPeople(roots);
+      personRoots = sortPeople(personRoots);
     }
 
-    const hasChildren = subtreeList.length > 0;
-    const isExpanded = hasChildren ? !collapsed.has(teamNodeId) : false;
+    for (const nested of nestedDirect) {
+      if (!nested.headId || nested.headId === head.id) continue;
+      if (subtreePeople.has(nested.headId)) continue;
+      const nestedHead = allPeopleById.get(nested.headId);
+      if (!nestedHead) continue;
+      subtreePeople.set(nestedHead.id, nestedHead);
+      subtreeIds.add(nestedHead.id);
+      personRoots = sortPeople([...personRoots, nestedHead]);
+    }
+
+    const hasMemberSubtree =
+      subtreePeople.size > 0 || nestedDirect.length > 0;
+    const isExpanded = hasMemberSubtree ? !collapsed.has(teamNodeId) : false;
     const headLabel = headPerson ? getPersonFullName(headPerson) : null;
 
     nodes.push({
@@ -612,14 +720,14 @@ function buildTeamAwareDepartmentFocusGraph(
       data: teamNodeData(team, {
         headLabel,
         memberCount: teamMembers.length,
-        hasChildren,
+        hasChildren: hasMemberSubtree,
         isExpanded,
-        canCollapse: hasChildren,
+        canCollapse: hasMemberSubtree,
       }),
     });
-    pushEdge(head.id, teamNodeId);
+    pushEdge(attachToNodeId, teamNodeId);
 
-    if (!isExpanded || !hasChildren) continue;
+    if (!isExpanded || !hasMemberSubtree) return;
 
     const visible = new Set<string>();
     const visit = (person: Person) => {
@@ -630,21 +738,35 @@ function buildTeamAwareDepartmentFocusGraph(
         visit(child);
       }
     };
-    for (const root of roots) visit(root);
+    for (const root of personRoots) visit(root);
+
+    for (const nested of nestedDirect) {
+      if (!nested.headId) continue;
+      const nestedHead = subtreePeople.get(nested.headId);
+      if (nestedHead) visible.add(nestedHead.id);
+    }
 
     for (const id of visible) {
       const person = subtreePeople.get(id);
       if (!person) continue;
       const children = (childMap.get(id) ?? []).filter((c) => c.id !== id);
-      const hasPersonChildren = children.length > 0;
+      const nestedUnder = nestedTeamsUnderPerson(
+        person.id,
+        team.id,
+        childTeamsByParent,
+      );
+      const hasPersonChildren = children.length > 0 || nestedUnder.length > 0;
+      const personExpanded = hasPersonChildren
+        ? !collapsed.has(person.id)
+        : false;
       pushPersonNode(person, {
         hasChildren: hasPersonChildren,
         canCollapse: hasPersonChildren,
-        isExpanded: hasPersonChildren ? !collapsed.has(person.id) : false,
+        isExpanded: personExpanded,
       });
     }
 
-    for (const root of roots) {
+    for (const root of personRoots) {
       if (!visible.has(root.id)) continue;
       pushEdge(teamNodeId, root.id);
     }
@@ -655,6 +777,27 @@ function buildTeamAwareDepartmentFocusGraph(
         pushEdge(managerId, child.id);
       }
     }
+
+    for (const id of visible) {
+      if (collapsed.has(id)) continue;
+      const nestedUnder = nestedTeamsUnderPerson(
+        id,
+        team.id,
+        childTeamsByParent,
+      );
+      for (const nested of nestedUnder) {
+        renderTeam(nested, id, id);
+      }
+    }
+
+    for (const nested of nestedDirect) {
+      if (nested.headId && nested.headId !== head.id) continue;
+      renderTeam(nested, teamNodeId, null);
+    }
+  };
+
+  for (const team of rootTeams) {
+    renderTeam(team, head.id, null);
   }
 
   const unassigned = sortPeople(

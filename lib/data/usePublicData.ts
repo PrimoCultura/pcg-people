@@ -261,6 +261,7 @@ export function useConvexDepartmentDetail(id: string) {
         slug: string;
         departmentId: Id<"departments">;
         headId?: Id<"people">;
+        parentTeamId?: Id<"teams">;
         description?: string;
         order?: number;
         head: ConvexPersonDoc | null;
@@ -273,6 +274,7 @@ export function useConvexDepartmentDetail(id: string) {
       slug: t.slug,
       departmentId: t.departmentId,
       headId: t.headId,
+      parentTeamId: t.parentTeamId,
       description: t.description,
       order: t.order,
       head: t.head ? mapConvexPerson(t.head) : null,

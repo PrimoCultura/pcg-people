@@ -61,12 +61,16 @@ export default defineSchema({
    * Organizational team within a department.
    * Slug is unique per department (not globally).
    * headId is the team lead — independent from people.managerId.
+   * parentTeamId optionally nests this team under another team in the
+   * same department (department focus chart). When absent, nesting may
+   * be inferred from the head's people.teamId membership.
    */
   teams: defineTable({
     name: v.string(),
     slug: v.string(),
     departmentId: v.id("departments"),
     headId: v.optional(v.id("people")),
+    parentTeamId: v.optional(v.id("teams")),
     description: v.optional(v.string()),
     order: v.optional(v.number()),
     active: v.boolean(),
@@ -75,6 +79,7 @@ export default defineSchema({
   })
     .index("by_department", ["departmentId"])
     .index("by_department_slug", ["departmentId", "slug"])
+    .index("by_parent", ["parentTeamId"])
     .index("by_active", ["active"]),
 
   districts: defineTable({

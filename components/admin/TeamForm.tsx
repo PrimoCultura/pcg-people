@@ -7,13 +7,26 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { getConvexUserMessage } from "@/lib/convexErrors";
 import { getPersonFullName } from "@/data/types";
-import { mapConvexPerson, type ConvexPersonDoc } from "@/lib/mappers";
+import type { Team } from "@/data/team";
+import {
+  mapConvexPerson,
+  mapConvexTeam,
+  type ConvexPersonDoc,
+  type ConvexTeamDoc,
+} from "@/lib/mappers";
+import {
+  buildChildTeamsByParent,
+  buildTeamParentMap,
+  collectTeamDescendantIds,
+  resolveTeamParent,
+} from "@/lib/teamHierarchy";
 
 type TeamFormState = {
   name: string;
   slug: string;
   departmentId: string;
   headId: string;
+  parentTeamId: string;
   description: string;
   order: string;
   active: boolean;
@@ -51,6 +64,7 @@ export function TeamForm({ teamId }: { teamId?: Id<"teams"> }) {
           slug: "",
           departmentId: "",
           headId: "",
+          parentTeamId: "",
           description: "",
           order: "",
           active: true,
@@ -73,6 +87,7 @@ export function TeamForm({ teamId }: { teamId?: Id<"teams"> }) {
         slug: existing.slug,
         departmentId: existing.departmentId,
         headId: existing.headId ?? "",
+        parentTeamId: existing.parentTeamId ?? "",
         description: existing.description ?? "",
         order: existing.order?.toString() ?? "",
         active: existing.active,
@@ -83,6 +98,7 @@ export function TeamForm({ teamId }: { teamId?: Id<"teams"> }) {
       slug: "",
       departmentId: "",
       headId: "",
+      parentTeamId: "",
       description: "",
       order: "",
       active: true,
@@ -125,6 +141,39 @@ export function TeamForm({ teamId }: { teamId?: Id<"teams"> }) {
     setError(null);
   };
 
+  const departmentTeams: Team[] = siblingTeams
+    ? (siblingTeams as ConvexTeamDoc[])
+        .filter((t) => t.departmentId === state.departmentId && t.active)
+        .map(mapConvexTeam)
+    : [];
+
+  const peopleById = new Map(peopleOpts.map((p) => [p.id, p]));
+
+  const parentResolution = resolveTeamParent(
+    {
+      id: teamId ?? "__new__",
+      name: state.name || "Nuovo Team",
+      departmentId: state.departmentId,
+      headId: state.headId || undefined,
+      parentTeamId: state.parentTeamId || undefined,
+    },
+    departmentTeams,
+    peopleById,
+  );
+
+  const parentMap = buildTeamParentMap(departmentTeams, peopleById);
+  const childTeamsByParent = buildChildTeamsByParent(
+    departmentTeams,
+    parentMap,
+  );
+  const excludedParentIds = teamId
+    ? collectTeamDescendantIds(teamId, childTeamsByParent)
+    : new Set<string>();
+  if (teamId) excludedParentIds.add(teamId);
+  const parentSelectOptions = departmentTeams.filter(
+    (t) => !excludedParentIds.has(t.id),
+  );
+
   const selectedHead = peopleOpts.find((p) => p.id === state.headId);
   const crossDeptHead =
     selectedHead &&
@@ -144,6 +193,13 @@ export function TeamForm({ teamId }: { teamId?: Id<"teams"> }) {
       t.active &&
       t.departmentId === (existing?.departmentId ?? state.departmentId),
   );
+
+  const selectedParentTeam = parentSelectOptions.find(
+    (t) => t.id === state.parentTeamId,
+  );
+  const selectedParentHead = selectedParentTeam?.headId
+    ? peopleOpts.find((p) => p.id === selectedParentTeam.headId)
+    : null;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -165,6 +221,9 @@ export function TeamForm({ teamId }: { teamId?: Id<"teams"> }) {
         name: state.name.trim(),
         departmentId: state.departmentId as Id<"departments">,
         headId: state.headId ? (state.headId as Id<"people">) : undefined,
+        parentTeamId: state.parentTeamId
+          ? (state.parentTeamId as Id<"teams">)
+          : undefined,
         description: state.description.trim() || undefined,
         order: state.order ? Number(state.order) : undefined,
         active: teamId ? state.active : (state.active ?? true),
@@ -251,7 +310,16 @@ export function TeamForm({ teamId }: { teamId?: Id<"teams"> }) {
           required
           className={inputClass}
           value={state.departmentId}
-          onChange={(e) => set("departmentId", e.target.value)}
+          onChange={(e) => {
+            const departmentId = e.target.value;
+            setForm({
+              ...state,
+              departmentId,
+              parentTeamId: "",
+            });
+            setMessage(null);
+            setError(null);
+          }}
         >
           <option value="">Seleziona…</option>
           {departments.map((d) => (
@@ -310,6 +378,58 @@ export function TeamForm({ teamId }: { teamId?: Id<"teams"> }) {
           </p>
         ) : null}
       </div>
+
+      <label className="block text-sm font-medium">
+        Team superiore
+        <select
+          className={inputClass}
+          value={state.parentTeamId}
+          onChange={(e) => set("parentTeamId", e.target.value)}
+          disabled={!state.departmentId}
+        >
+          <option value="">Nessuno (livello dipartimento)</option>
+          {parentSelectOptions.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+              {t.headName ? ` — resp. ${t.headName}` : ""}
+            </option>
+          ))}
+        </select>
+        <span className="mt-1 block text-xs text-pcg-text-muted">
+          Facoltativo. Se vuoto, l&apos;annidamento può essere dedotto
+          dall&apos;appartenenza del responsabile a un altro Team dello stesso
+          dipartimento.
+        </span>
+      </label>
+
+      {selectedParentTeam && selectedParentHead ? (
+        <p className="text-xs text-pcg-text-muted">
+          Responsabile del Team superiore:{" "}
+          {getPersonFullName(selectedParentHead)}
+          {selectedParentHead.role ? ` — ${selectedParentHead.role}` : ""}
+        </p>
+      ) : null}
+
+      {parentResolution?.source === "inferred" && !state.parentTeamId ? (
+        <p
+          className="rounded-pcg border border-pcg-border bg-pcg-bg-subtle px-3 py-2 text-sm text-pcg-text-secondary"
+          role="status"
+        >
+          Annidamento dedotto: sotto «
+          {departmentTeams.find((t) => t.id === parentResolution.parentTeamId)
+            ?.name ?? "Team superiore"}
+          » tramite l&apos;appartenenza del responsabile.
+        </p>
+      ) : null}
+
+      {parentResolution?.warning ? (
+        <p
+          className="rounded-pcg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          role="status"
+        >
+          {parentResolution.warning}
+        </p>
+      ) : null}
 
       {crossDeptHead ? (
         <p

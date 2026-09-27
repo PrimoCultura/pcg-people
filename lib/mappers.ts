@@ -80,6 +80,7 @@ export type ConvexTeamDoc = {
   slug: string;
   departmentId: Id<"departments">;
   headId?: Id<"people">;
+  parentTeamId?: Id<"teams">;
   description?: string;
   order?: number;
   active: boolean;
@@ -87,6 +88,7 @@ export type ConvexTeamDoc = {
   headName?: string | null;
   headRole?: string | null;
   headDepartmentId?: Id<"departments"> | null;
+  parentTeamName?: string | null;
   activeMemberCount?: number;
 };
 
@@ -124,11 +126,13 @@ export function mapConvexTeam(doc: ConvexTeamDoc) {
     slug: doc.slug,
     departmentId: doc.departmentId,
     headId: doc.headId,
+    parentTeamId: doc.parentTeamId,
     description: doc.description,
     order: doc.order,
     departmentLabel: doc.departmentName,
     headName: doc.headName,
     headRole: doc.headRole,
+    parentTeamName: doc.parentTeamName,
     memberCount: doc.activeMemberCount,
   };
 }

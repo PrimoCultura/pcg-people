@@ -68,6 +68,52 @@ export async function assertTeamHead(
   }
 }
 
+/**
+ * Validates optional parentTeamId: same department, not self, no cycles.
+ * Does not mutate people.managerId.
+ */
+export async function assertTeamParent(
+  ctx: Ctx,
+  teamId: Id<"teams"> | undefined,
+  departmentId: Id<"departments">,
+  parentTeamId: Id<"teams"> | undefined,
+) {
+  if (!parentTeamId) return;
+
+  if (teamId && parentTeamId === teamId) {
+    userError("Un Team non può essere superiore di sé stesso.");
+  }
+
+  const parent = await requireTeam(ctx, parentTeamId);
+  if (parent.departmentId !== departmentId) {
+    userError(
+      "Il Team superiore deve appartenere allo stesso dipartimento.",
+    );
+  }
+
+  // Walk ancestors of the chosen parent; if we hit teamId, nesting would cycle.
+  if (teamId) {
+    let currentId: Id<"teams"> | undefined = parentTeamId;
+    const visited = new Set<string>();
+    while (currentId) {
+      if (currentId === teamId) {
+        userError(
+          "Non è possibile impostare questo Team superiore: creerebbe un ciclo.",
+        );
+      }
+      if (visited.has(currentId)) {
+        userError(
+          "Non è possibile impostare questo Team superiore: gerarchia circolare rilevata.",
+        );
+      }
+      visited.add(currentId);
+      const current: Doc<"teams"> | null = await ctx.db.get(currentId);
+      if (!current) break;
+      currentId = current.parentTeamId;
+    }
+  }
+}
+
 export async function requireDistrict(
   ctx: Ctx,
   id: Id<"districts">,

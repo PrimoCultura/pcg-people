@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
   assertTeamHead,
+  assertTeamParent,
   now,
   requireDepartment,
   requireTeam,
@@ -17,6 +18,9 @@ type Ctx = QueryCtx | MutationCtx;
 async function enrichTeam(ctx: Ctx, team: Doc<"teams">) {
   const department = await ctx.db.get(team.departmentId);
   const head = team.headId ? await ctx.db.get(team.headId) : null;
+  const parentTeam = team.parentTeamId
+    ? await ctx.db.get(team.parentTeamId)
+    : null;
   const members = await ctx.db
     .query("people")
     .withIndex("by_team", (q) => q.eq("teamId", team._id))
@@ -29,6 +33,7 @@ async function enrichTeam(ctx: Ctx, team: Doc<"teams">) {
     headName: head ? `${head.firstName} ${head.lastName}` : null,
     headRole: head?.role ?? null,
     headDepartmentId: head?.departmentId ?? null,
+    parentTeamName: parentTeam?.name ?? null,
     activeMemberCount: activeMembers.length,
   };
 }
@@ -190,6 +195,7 @@ export const create = mutation({
     slug: v.optional(v.string()),
     departmentId: v.id("departments"),
     headId: v.optional(v.id("people")),
+    parentTeamId: v.optional(v.id("teams")),
     description: v.optional(v.string()),
     order: v.optional(v.number()),
     active: v.optional(v.boolean()),
@@ -200,6 +206,12 @@ export const create = mutation({
     if (!slug) userError("Il nome del Team non produce uno slug valido.");
     await assertUniqueSlugInDepartment(ctx, args.departmentId, slug);
     await assertTeamHead(ctx, args.headId);
+    await assertTeamParent(
+      ctx,
+      undefined,
+      args.departmentId,
+      args.parentTeamId,
+    );
 
     let order = args.order;
     if (order === undefined) {
@@ -223,6 +235,7 @@ export const create = mutation({
       slug,
       departmentId: args.departmentId,
       headId: args.headId,
+      parentTeamId: args.parentTeamId,
       description: args.description?.trim() || undefined,
       order,
       active: args.active ?? true,
@@ -239,6 +252,7 @@ export const update = mutation({
     slug: v.string(),
     departmentId: v.id("departments"),
     headId: v.optional(v.id("people")),
+    parentTeamId: v.optional(v.id("teams")),
     description: v.optional(v.string()),
     order: v.optional(v.number()),
     active: v.boolean(),
@@ -252,6 +266,12 @@ export const update = mutation({
     if (!slug) userError("Lo slug del Team non è valido.");
     await assertUniqueSlugInDepartment(ctx, args.departmentId, slug, args.id);
     await assertTeamHead(ctx, args.headId);
+    await assertTeamParent(
+      ctx,
+      args.id,
+      args.departmentId,
+      args.parentTeamId,
+    );
 
     if (args.departmentId !== existing.departmentId) {
       const members = await ctx.db
@@ -280,6 +300,7 @@ export const update = mutation({
       slug,
       departmentId: args.departmentId,
       headId: args.headId,
+      parentTeamId: args.parentTeamId,
       description: args.description?.trim() || undefined,
       order: args.order,
       active: args.active,
