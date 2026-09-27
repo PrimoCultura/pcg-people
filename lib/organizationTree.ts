@@ -6,7 +6,9 @@ import {
 } from "@/data/department";
 import { mockDepartments } from "@/data/mockDepartments";
 import { mockPeople } from "@/data/mockPeople";
+import type { Team } from "@/data/team";
 import {
+  getPersonFullName,
   getReportingType,
   isAreaManager,
   isDistrictManager,
@@ -253,71 +255,111 @@ export function staffGroupLabel(manager: Person): string {
   return "Staff";
 }
 
+function isNetworkDepartment(department: Department): boolean {
+  const slug = (department.slug ?? department.id).toLowerCase();
+  return slug === "network" || department.name.trim().toLowerCase() === "network";
+}
+
+/** CEO is the manager's primary function — never a Staff AD department card. */
+function isCeoDepartment(department: Department): boolean {
+  const slug = (department.slug ?? "").toLowerCase();
+  if (slug === "ceo") return true;
+  return /^ceo$/i.test(department.name.trim());
+}
+
 /**
  * Staff departments shown as visual containers under a manager's Staff comb.
  *
- * A department appears when:
- * - it is headed by this manager and marked (or inferred as) staff, OR
- * - this manager has staff reports who belong to that department
- *   (so Cultura always wraps Andrea even if placement was never saved in Convex)
- *
+ * Uses department.headId + organizationalPlacement (and a secondary-dept
+ * heuristic when placement is unset). Never invents managerId edges.
+ * The CEO function is never rendered as a Staff card.
  * The head person is never listed as a member.
  */
 function staffDepartmentsForManager(
   manager: Person,
   departments: Department[],
-  people: Person[],
 ): Department[] {
-  const byId = new Map(departments.map((d) => [d.id, d]));
-  const result = new Map<string, Department>();
+  const result: Department[] = [];
 
   for (const department of departments) {
-    if (department.id === "network") continue;
+    if (isNetworkDepartment(department)) continue;
+    if (isCeoDepartment(department)) continue;
     if (department.headId !== manager.id) continue;
 
     if (getDepartmentOrganizationalPlacement(department) === "staff") {
-      result.set(department.id, department);
+      result.push(department);
       continue;
     }
 
-    const hasStaffMember = people.some(
-      (p) =>
-        p.departmentId === department.id &&
-        p.managerId === manager.id &&
-        p.id !== manager.id &&
-        getReportingType(p) === "staff",
-    );
-    if (hasStaffMember) result.set(department.id, department);
+    // Secondary function headed by this manager while they belong to another
+    // department (typical: AD in Ceo heading Cultura). Treat as staff
+    // container even if organizationalPlacement was never saved.
+    if (manager.departmentId && department.id !== manager.departmentId) {
+      result.push(department);
+    }
   }
 
-  // Group this manager's staff reports into their department cards.
-  for (const person of people) {
-    if (person.managerId !== manager.id) continue;
-    if (person.id === manager.id) continue;
-    if (getReportingType(person) !== "staff") continue;
-    if (!person.departmentId) continue;
-    const department = byId.get(person.departmentId);
-    if (!department || department.id === "network") continue;
-    result.set(department.id, department);
-  }
-
-  return [...result.values()].sort((a, b) =>
-    a.name.localeCompare(b.name, "it"),
-  );
+  return result.sort((a, b) => a.name.localeCompare(b.name, "it"));
 }
 
-/** First-level people inside a staff department (head excluded). */
+/**
+ * People belonging to a staff department container (head excluded).
+ * Includes members without managerId — they stay inside the department
+ * as "da collocare", never as artificial first-line of the head.
+ */
 function departmentInnerMembers(
   department: Department,
-  managerId: string,
+  headPersonId: string,
   people: Person[],
 ): Person[] {
   return people
     .filter(
       (p) =>
         p.departmentId === department.id &&
-        p.managerId === managerId &&
-        p.id !== managerId,
+        p.id !== headPersonId &&
+        p.id !== department.headId,
+    )
+    .sort((a, b) =>
+      `${a.lastName} ${a.firstName}`.localeCompare(
+        `${b.lastName} ${b.firstName}`,
+        "it",
+      ),
+    );
+}
+
+function buildInnerChildMap(
+  members: Person[],
+  memberIds: Set<string>,
+): Map<string, Person[]> {
+  const map = new Map<string, Person[]>();
+  for (const person of members) {
+    if (!person.managerId) continue;
+    if (person.managerId === person.id) continue;
+    if (!memberIds.has(person.managerId)) continue;
+    if (!memberIds.has(person.id)) continue;
+    const list = map.get(person.managerId) ?? [];
+    list.push(person);
+    map.set(person.managerId, list);
+  }
+  for (const [, list] of map) {
+    list.sort((a, b) =>
+      `${a.lastName} ${a.firstName}`.localeCompare(
+        `${b.lastName} ${b.firstName}`,
+        "it",
+      ),
+    );
+  }
+  return map;
+}
+
+/** Roots of the inner hierarchy: manager outside the set / missing. */
+function innerHierarchyRoots(
+  members: Person[],
+  memberIds: Set<string>,
+): Person[] {
+  return members
+    .filter(
+      (p) => !p.managerId || !memberIds.has(p.managerId),
     )
     .sort((a, b) =>
       `${a.lastName} ${a.firstName}`.localeCompare(
@@ -338,6 +380,7 @@ export function getDefaultCollapsedIds(
   mode: OrgMode,
   people: Person[] = mockPeople,
   departments: Department[] = mockDepartments,
+  teams: Team[] = [],
 ): Set<string> {
   const scoped = getPeopleForMode(mode, people);
   const childMap = buildChildMap(scoped);
@@ -354,10 +397,15 @@ export function getDefaultCollapsedIds(
 
   if (mode === "organization") {
     for (const root of roots) {
-      for (const dept of staffDepartmentsForManager(root, departments, scoped)) {
+      for (const dept of staffDepartmentsForManager(root, departments)) {
         const members = departmentInnerMembers(dept, root.id, scoped);
         if (members.length > 0) {
           collapsed.add(virtualDepartmentNodeId(dept.id));
+        }
+        for (const team of teamsForDepartment(dept.id, teams)) {
+          if (members.some((m) => m.teamId === team.id)) {
+            collapsed.add(virtualTeamNodeId(team.id));
+          }
         }
       }
     }
@@ -370,6 +418,7 @@ export function getAllCollapsibleIds(
   mode: OrgMode,
   people: Person[] = mockPeople,
   departments: Department[] = mockDepartments,
+  teams: Team[] = [],
 ): Set<string> {
   const scoped = getPeopleForMode(mode, people);
   const childMap = buildChildMap(scoped);
@@ -383,15 +432,31 @@ export function getAllCollapsibleIds(
 
   if (mode === "organization") {
     for (const person of scoped) {
-      for (const dept of staffDepartmentsForManager(person, departments, scoped)) {
-        if (departmentInnerMembers(dept, person.id, scoped).length > 0) {
+      for (const dept of staffDepartmentsForManager(person, departments)) {
+        const members = departmentInnerMembers(dept, person.id, scoped);
+        if (members.length > 0) {
           ids.add(virtualDepartmentNodeId(dept.id));
+        }
+        for (const team of teamsForDepartment(dept.id, teams)) {
+          if (members.some((m) => m.teamId === team.id)) {
+            ids.add(virtualTeamNodeId(team.id));
+          }
         }
       }
     }
   }
 
   return ids;
+}
+
+function teamsForDepartment(departmentId: string, teams: Team[]): Team[] {
+  return [...teams]
+    .filter((t) => t.departmentId === departmentId)
+    .sort(
+      (a, b) =>
+        (a.order ?? 999) - (b.order ?? 999) ||
+        a.name.localeCompare(b.name, "it"),
+    );
 }
 
 /**
@@ -405,6 +470,7 @@ function collectVisibleIds(
   collapsed: Set<string>,
   departments: Department[],
   people: Person[],
+  teams: Team[] = [],
 ): Set<string> {
   const rootIds = new Set(roots.map((r) => r.id));
   const visible = new Set<string>();
@@ -419,7 +485,7 @@ function collectVisibleIds(
     if (!manager) return null;
     // Anyone in a staff department headed by this manager is shown under
     // that department card (not as a direct line/staff leaf of the manager).
-    const dept = staffDepartmentsForManager(manager, departments, people).find(
+    const dept = staffDepartmentsForManager(manager, departments).find(
       (d) => d.id === child.departmentId,
     );
     return dept ? virtualDepartmentNodeId(dept.id) : null;
@@ -447,11 +513,21 @@ function collectVisibleIds(
   // descendants) are visible even if the walk skipped them earlier.
   if (mode === "organization") {
     for (const person of people) {
-      for (const dept of staffDepartmentsForManager(person, departments, people)) {
+      for (const dept of staffDepartmentsForManager(person, departments)) {
         const deptNodeId = virtualDepartmentNodeId(dept.id);
         if (collapsed.has(deptNodeId)) continue;
         if (!visible.has(person.id)) continue;
+        const deptTeamIds = new Set(
+          teamsForDepartment(dept.id, teams).map((t) => t.id),
+        );
         for (const member of departmentInnerMembers(dept, person.id, people)) {
+          if (
+            member.teamId &&
+            deptTeamIds.has(member.teamId) &&
+            collapsed.has(virtualTeamNodeId(member.teamId))
+          ) {
+            continue;
+          }
           visit(member);
         }
       }
@@ -467,6 +543,7 @@ export function buildOrganizationGraph(
   people: Person[] = mockPeople,
   clinics: ClinicLike[] = [],
   departments: Department[] = mockDepartments,
+  teams: Team[] = [],
 ): {
   nodes: OrgChartNode[];
   edges: Edge[];
@@ -477,7 +554,6 @@ export function buildOrganizationGraph(
   const idSet = new Set(scoped.map((p) => p.id));
   const childMap = buildChildMap(scoped);
   const { roots, status } = getDiagramRoots(mode, scoped, people);
-  const orphans = mode === "organization" ? getOrgOrphans(people) : [];
   const rootIds = new Set(roots.map((r) => r.id));
   const effectiveCollapsed = new Set(
     [...collapsed].filter((id) => !rootIds.has(id)),
@@ -489,8 +565,27 @@ export function buildOrganizationGraph(
     effectiveCollapsed,
     departments,
     scoped,
+    teams,
   );
   const byId = new Map(scoped.map((p) => [p.id, p]));
+
+  // Members of staff department containers are shown inside those cards,
+  // not in the global "missing manager" list.
+  const staffContainedIds = new Set<string>();
+  if (mode === "organization") {
+    for (const person of scoped) {
+      for (const dept of staffDepartmentsForManager(person, departments)) {
+        for (const member of departmentInnerMembers(dept, person.id, scoped)) {
+          staffContainedIds.add(member.id);
+        }
+      }
+    }
+  }
+
+  const orphans =
+    mode === "organization"
+      ? getOrgOrphans(people).filter((p) => !staffContainedIds.has(p.id))
+      : [];
 
   const clinicCountFor = (personId: string) => {
     if (clinics.length > 0) {
@@ -594,7 +689,7 @@ export function buildOrganizationGraph(
       (c) => c.id !== managerId,
     );
     const { lineReports, staffReports } = splitReports(children);
-    const staffDepts = staffDepartmentsForManager(manager, departments, scoped);
+    const staffDepts = staffDepartmentsForManager(manager, departments);
     const staffDeptIds = new Set(staffDepts.map((d) => d.id));
     const visibleLine = lineReports.filter(
       (c) =>
@@ -684,26 +779,112 @@ export function buildOrganizationGraph(
 
       pushEdge(hubId, deptNodeId, { staff: true });
 
-      if (isExpanded) {
-        const deptHubId = departmentHubNodeId(dept.id);
-        if (!virtualIdsAdded.has(deptHubId)) {
-          virtualIdsAdded.add(deptHubId);
+      if (!isExpanded || !hasChildren) continue;
+
+      const deptHubId = departmentHubNodeId(dept.id);
+      if (!virtualIdsAdded.has(deptHubId)) {
+        virtualIdsAdded.add(deptHubId);
+        nodes.push({
+          id: deptHubId,
+          type: "hub",
+          position: { x: 0, y: 0 },
+          selectable: false,
+          draggable: false,
+          data: {
+            kind: "hub",
+            parentNodeId: deptNodeId,
+          },
+        });
+      }
+      pushEdge(deptNodeId, deptHubId, { staff: true });
+
+      const deptTeams = teamsForDepartment(dept.id, teams);
+      const innerIds = new Set(inner.map((m) => m.id));
+      const assignedToTeam = new Set<string>();
+
+      for (const team of deptTeams) {
+        const teamMembers = inner.filter((m) => m.teamId === team.id);
+        if (teamMembers.length === 0) continue;
+        for (const m of teamMembers) assignedToTeam.add(m.id);
+
+        const teamNodeId = virtualTeamNodeId(team.id);
+        const teamCollapsed = effectiveCollapsed.has(teamNodeId);
+        const headPerson = team.headId ? byId.get(team.headId) : null;
+        const headLabel = headPerson
+          ? getPersonFullName(headPerson)
+          : null;
+
+        if (!virtualIdsAdded.has(teamNodeId)) {
+          virtualIdsAdded.add(teamNodeId);
           nodes.push({
-            id: deptHubId,
-            type: "hub",
+            id: teamNodeId,
+            type: "team",
             position: { x: 0, y: 0 },
-            selectable: false,
-            draggable: false,
+            style: { cursor: "pointer", pointerEvents: "auto" },
             data: {
-              kind: "hub",
-              parentNodeId: deptNodeId,
+              kind: "team",
+              label: team.name,
+              teamId: team.id,
+              departmentId: dept.id,
+              headLabel,
+              memberCount: teamMembers.length,
+              hasChildren: true,
+              isExpanded: !teamCollapsed,
+              canCollapse: true,
             },
           });
         }
-        pushEdge(deptNodeId, deptHubId, { staff: true });
-        for (const member of inner) {
-          if (!personNodeIds.has(member.id)) continue;
-          pushEdge(deptHubId, member.id, { staff: true });
+        pushEdge(deptHubId, teamNodeId, { staff: true });
+
+        if (teamCollapsed) continue;
+
+        const teamIds = new Set(teamMembers.map((m) => m.id));
+        const teamChildMap = buildInnerChildMap(teamMembers, teamIds);
+        const teamRoots = innerHierarchyRoots(teamMembers, teamIds);
+        for (const root of teamRoots) {
+          if (!personNodeIds.has(root.id)) continue;
+          pushEdge(teamNodeId, root.id, { staff: true });
+        }
+        for (const [parentId, kids] of teamChildMap) {
+          if (effectiveCollapsed.has(parentId)) continue;
+          for (const child of kids) {
+            if (!personNodeIds.has(child.id)) continue;
+            pushEdge(parentId, child.id, { staff: true });
+          }
+        }
+      }
+
+      const unassigned = inner.filter((m) => !assignedToTeam.has(m.id));
+      const unassignedIds = new Set(unassigned.map((m) => m.id));
+      const unassignedChildMap = buildInnerChildMap(unassigned, unassignedIds);
+      const unassignedRoots = innerHierarchyRoots(unassigned, unassignedIds);
+
+      for (const root of unassignedRoots) {
+        if (!personNodeIds.has(root.id)) continue;
+        pushEdge(deptHubId, root.id, { staff: true });
+      }
+      for (const [parentId, kids] of unassignedChildMap) {
+        if (effectiveCollapsed.has(parentId)) continue;
+        for (const child of kids) {
+          if (!personNodeIds.has(child.id)) continue;
+          pushEdge(parentId, child.id, { staff: true });
+        }
+      }
+
+      // No teams: full department hierarchy under the hub.
+      if (deptTeams.length === 0) {
+        const allChildMap = buildInnerChildMap(inner, innerIds);
+        const allRoots = innerHierarchyRoots(inner, innerIds);
+        for (const root of allRoots) {
+          if (!personNodeIds.has(root.id)) continue;
+          pushEdge(deptHubId, root.id, { staff: true });
+        }
+        for (const [parentId, kids] of allChildMap) {
+          if (effectiveCollapsed.has(parentId)) continue;
+          for (const child of kids) {
+            if (!personNodeIds.has(child.id)) continue;
+            pushEdge(parentId, child.id, { staff: true });
+          }
         }
       }
     }

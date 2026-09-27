@@ -17,9 +17,11 @@ import { OrganizationFlowProvider } from "@/components/organization/Organization
 import { OrgDepartmentNode } from "@/components/organization/OrgDepartmentNode";
 import { OrgHubNode } from "@/components/organization/OrgHubNode";
 import { OrgLabelNode } from "@/components/organization/OrgLabelNode";
+import { OrgTeamNode } from "@/components/organization/OrgTeamNode";
 import { PersonOrgNode } from "@/components/organization/PersonOrgNode";
 import type { Clinic } from "@/data/clinic";
 import type { Department } from "@/data/department";
+import type { Team } from "@/data/team";
 import { getPersonFullName, type Person } from "@/data/types";
 import { getLayoutedElements } from "@/lib/organizationLayout";
 import {
@@ -35,6 +37,7 @@ import {
 const nodeTypes = {
   person: PersonOrgNode,
   department: OrgDepartmentNode,
+  team: OrgTeamNode,
   label: OrgLabelNode,
   hub: OrgHubNode,
 } satisfies NodeTypes;
@@ -44,6 +47,7 @@ type OrganizationFlowProps = {
   people: Person[];
   clinics?: Clinic[];
   departments?: Department[];
+  teams?: Team[];
 };
 
 function OrganizationFlowInner({
@@ -51,12 +55,13 @@ function OrganizationFlowInner({
   people,
   clinics = [],
   departments = [],
+  teams = [],
 }: OrganizationFlowProps) {
   const router = useRouter();
   const { fitView } = useReactFlow();
   const defaultCollapsed = useMemo(
-    () => getDefaultCollapsedIds(mode, people, departments),
-    [mode, people, departments],
+    () => getDefaultCollapsedIds(mode, people, departments, teams),
+    [mode, people, departments, teams],
   );
   const [collapsedOverride, setCollapsedOverride] = useState<Set<string> | null>(
     null,
@@ -71,6 +76,7 @@ function OrganizationFlowInner({
       people,
       clinics,
       departments,
+      teams,
     );
     const layouted = getLayoutedElements(graph.nodes, graph.edges);
     return {
@@ -78,7 +84,7 @@ function OrganizationFlowInner({
       status: graph.status,
       orphans: graph.orphans,
     };
-  }, [mode, collapsed, people, clinics, departments]);
+  }, [mode, collapsed, people, clinics, departments, teams]);
 
   useEffect(() => {
     if (nodes.length === 0) return;
@@ -90,7 +96,12 @@ function OrganizationFlowInner({
 
   const toggleExpand = useCallback(
     (nodeId: string) => {
-      const collapsible = getAllCollapsibleIds(mode, people, departments);
+      const collapsible = getAllCollapsibleIds(
+        mode,
+        people,
+        departments,
+        teams,
+      );
       if (!collapsible.has(nodeId)) return;
       setCollapsedOverride((prev) => {
         const base = prev ?? defaultCollapsed;
@@ -100,7 +111,7 @@ function OrganizationFlowInner({
         return next;
       });
     },
-    [mode, people, departments, defaultCollapsed],
+    [mode, people, departments, teams, defaultCollapsed],
   );
 
   const expandAll = useCallback(() => {
@@ -108,8 +119,10 @@ function OrganizationFlowInner({
   }, []);
 
   const collapseAll = useCallback(() => {
-    setCollapsedOverride(getAllCollapsibleIds(mode, people, departments));
-  }, [mode, people, departments]);
+    setCollapsedOverride(
+      getAllCollapsibleIds(mode, people, departments, teams),
+    );
+  }, [mode, people, departments, teams]);
 
   const openAreaManager = useCallback((personId: string) => {
     setSelectedAmId(personId);
@@ -133,6 +146,10 @@ function OrganizationFlowInner({
     (_event, node: Node) => {
       const kind = (node.data as { kind?: string } | undefined)?.kind;
       if (kind === "label" || kind === "hub" || kind === "group") return;
+      if (kind === "team" || node.type === "team") {
+        toggleExpand(node.id);
+        return;
+      }
       if (kind === "department") {
         const data = node.data as OrgDepartmentNodeData;
         if (!data.departmentId) return;
@@ -145,7 +162,7 @@ function OrganizationFlowInner({
         router.push(`/persone/${data.personId}`);
       }
     },
-    [router],
+    [router, toggleExpand],
   );
 
   const actions = useMemo(

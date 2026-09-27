@@ -24,12 +24,13 @@ export function OrganizationPageClient() {
 
 function OrganizationPageBody() {
   if (!isConvexConfigured()) {
-    const { people, clinics, departments } = getMockOrganizationBundle();
+    const { people, clinics, departments, teams } = getMockOrganizationBundle();
     return (
       <OrganizationView
         people={people}
         clinics={clinics}
         departments={departments}
+        teams={teams}
       />
     );
   }
@@ -37,7 +38,7 @@ function OrganizationPageBody() {
 }
 
 function OrganizationFromConvex() {
-  const { status, people, clinics, departments } =
+  const { status, people, clinics, departments, teams } =
     useConvexOrganizationBundle();
 
   if (status === "loading") {
@@ -53,6 +54,7 @@ function OrganizationFromConvex() {
       people={people}
       clinics={clinics}
       departments={departments}
+      teams={teams}
     />
   );
 }

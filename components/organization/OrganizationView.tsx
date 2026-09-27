@@ -15,6 +15,7 @@ type OrganizationViewProps = {
   people: Person[];
   clinics?: Clinic[];
   departments?: Department[];
+  teams?: import("@/data/team").Team[];
 };
 
 function parseViewParam(value: string | null): OrgViewMode {
@@ -33,6 +34,7 @@ export function OrganizationView({
   people,
   clinics = [],
   departments = [],
+  teams = [],
 }: OrganizationViewProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -95,6 +97,7 @@ export function OrganizationView({
             people={people}
             clinics={clinics}
             departments={departments}
+            teams={teams}
           />
         </>
       )}
