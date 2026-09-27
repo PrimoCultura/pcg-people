@@ -62,6 +62,7 @@ export function TeamForm({ teamId }: { teamId?: Id<"teams"> }) {
   const [error, setError] = useState<string | null>(null);
   const [clearMemberTeams, setClearMemberTeams] = useState(false);
   const [reassignMembersToTeamId, setReassignMembersToTeamId] = useState("");
+  const [headQuery, setHeadQuery] = useState("");
 
   const state = useMemo(() => {
     if (form) return form;
@@ -88,6 +89,23 @@ export function TeamForm({ teamId }: { teamId?: Id<"teams"> }) {
     };
   }, [form, teamId, existing]);
 
+  const peopleOpts = useMemo(() => {
+    if (!people) return [];
+    return (people as ConvexPersonDoc[])
+      .filter((p) => p.active)
+      .map(mapConvexPerson);
+  }, [people]);
+
+  const filteredHeadOptions = useMemo(() => {
+    const q = headQuery.trim().toLowerCase();
+    if (!q) return peopleOpts;
+    return peopleOpts.filter((p) => {
+      const haystack =
+        `${getPersonFullName(p)} ${p.role} ${p.departmentLabel ?? ""}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [peopleOpts, headQuery]);
+
   if (teamId && existing === undefined) {
     return <p className="text-sm text-pcg-text-secondary">Caricamento…</p>;
   }
@@ -106,10 +124,6 @@ export function TeamForm({ teamId }: { teamId?: Id<"teams"> }) {
     setMessage(null);
     setError(null);
   };
-
-  const peopleOpts = (people as ConvexPersonDoc[])
-    .filter((p) => p.active)
-    .map(mapConvexPerson);
 
   const selectedHead = peopleOpts.find((p) => p.id === state.headId);
   const crossDeptHead =
@@ -248,22 +262,54 @@ export function TeamForm({ teamId }: { teamId?: Id<"teams"> }) {
         </select>
       </label>
 
-      <label className="block text-sm font-medium">
-        Responsabile del Team
-        <select
-          className={inputClass}
-          value={state.headId}
-          onChange={(e) => set("headId", e.target.value)}
-        >
-          <option value="">Nessuno</option>
-          {peopleOpts.map((p) => (
-            <option key={p.id} value={p.id}>
-              {getPersonFullName(p)} — {p.role}
-              {p.departmentLabel ? ` (${p.departmentLabel})` : ""}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div>
+        <label className="block text-sm font-medium">
+          Responsabile del Team
+          <input
+            type="search"
+            value={headQuery}
+            onChange={(e) => setHeadQuery(e.target.value)}
+            placeholder="Filtra per nome, ruolo o dipartimento…"
+            className={inputClass}
+            aria-label="Filtra responsabile del Team"
+          />
+          <select
+            className={inputClass}
+            value={state.headId}
+            onChange={(e) => set("headId", e.target.value)}
+          >
+            <option value="">Nessuno</option>
+            {state.headId &&
+            !filteredHeadOptions.some((p) => p.id === state.headId)
+              ? (() => {
+                  const selected = peopleOpts.find(
+                    (p) => p.id === state.headId,
+                  );
+                  return selected ? (
+                    <option key={selected.id} value={selected.id}>
+                      {getPersonFullName(selected)} — {selected.role}
+                      {selected.departmentLabel
+                        ? ` (${selected.departmentLabel})`
+                        : ""}
+                    </option>
+                  ) : null;
+                })()
+              : null}
+            {filteredHeadOptions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {getPersonFullName(p)} — {p.role}
+                {p.departmentLabel ? ` (${p.departmentLabel})` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        {headQuery.trim() ? (
+          <p className="mt-1 text-xs text-pcg-text-muted">
+            {filteredHeadOptions.length}{" "}
+            {filteredHeadOptions.length === 1 ? "risultato" : "risultati"}
+          </p>
+        ) : null}
+      </div>
 
       {crossDeptHead ? (
         <p
