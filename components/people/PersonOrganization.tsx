@@ -41,6 +41,13 @@ export function PersonOrganization({
           </dd>
         </div>
 
+        {person.teamLabel ? (
+          <div>
+            <dt className="text-sm text-pcg-text-muted">Team</dt>
+            <dd className="mt-1 text-base text-pcg-text">{person.teamLabel}</dd>
+          </div>
+        ) : null}
+
         {manager ? (
           <div>
             <dt className="text-sm text-pcg-text-muted">Responsabile diretto</dt>

@@ -6,6 +6,8 @@ const PERSON_NODE_WIDTH = 220;
 const PERSON_NODE_HEIGHT = 112;
 const DEPT_NODE_WIDTH = 200;
 const DEPT_NODE_HEIGHT = 72;
+const TEAM_NODE_WIDTH = 210;
+const TEAM_NODE_HEIGHT = 96;
 const HUB_SIZE = 1;
 const LABEL_WIDTH = 100;
 const LABEL_HEIGHT = 18;
@@ -27,6 +29,9 @@ function sizeForNode(node: Node): { width: number; height: number } {
   if (node.type === "label") return { width: LABEL_WIDTH, height: LABEL_HEIGHT };
   if (node.type === "department") {
     return { width: DEPT_NODE_WIDTH, height: DEPT_NODE_HEIGHT };
+  }
+  if (node.type === "team") {
+    return { width: TEAM_NODE_WIDTH, height: TEAM_NODE_HEIGHT };
   }
   return { width: PERSON_NODE_WIDTH, height: PERSON_NODE_HEIGHT };
 }

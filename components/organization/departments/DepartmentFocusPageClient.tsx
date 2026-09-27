@@ -14,6 +14,7 @@ import {
   getDepartmentById,
   getDepartmentFocusMembers,
 } from "@/lib/departmentOrganizationTree";
+import type { Team } from "@/data/team";
 
 type DepartmentFocusPageClientProps = {
   departmentId: string;
@@ -23,12 +24,13 @@ export function DepartmentFocusPageClient({
   departmentId,
 }: DepartmentFocusPageClientProps) {
   if (!isConvexConfigured()) {
-    const { people, departments } = getMockOrganizationBundle();
+    const { people, departments, teams } = getMockOrganizationBundle();
     return (
       <DepartmentFocusContent
         departmentId={departmentId}
         people={people}
         departments={departments}
+        teams={teams}
       />
     );
   }
@@ -40,7 +42,7 @@ function DepartmentFocusFromConvex({
 }: {
   departmentId: string;
 }) {
-  const { status, people, departments } = useConvexOrganizationBundle();
+  const { status, people, departments, teams } = useConvexOrganizationBundle();
 
   if (status === "loading") {
     return (
@@ -55,6 +57,7 @@ function DepartmentFocusFromConvex({
       departmentId={departmentId}
       people={people}
       departments={departments}
+      teams={teams}
     />
   );
 }
@@ -63,10 +66,12 @@ function DepartmentFocusContent({
   departmentId,
   people,
   departments,
+  teams,
 }: {
   departmentId: string;
   people: import("@/data/types").Person[];
   departments: Department[];
+  teams: Team[];
 }) {
   const department = getDepartmentById(departmentId, departments, people);
 
@@ -99,6 +104,7 @@ function DepartmentFocusContent({
         department={department}
         people={people}
         departments={departments}
+        teams={teams}
       />
     </>
   );

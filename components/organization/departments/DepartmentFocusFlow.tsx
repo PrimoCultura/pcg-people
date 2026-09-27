@@ -13,8 +13,10 @@ import {
 } from "@xyflow/react";
 import { OrganizationControls } from "@/components/organization/OrganizationControls";
 import { OrganizationFlowProvider } from "@/components/organization/OrganizationFlowContext";
+import { OrgTeamNode } from "@/components/organization/OrgTeamNode";
 import { PersonOrgNode } from "@/components/organization/PersonOrgNode";
 import type { Department } from "@/data/department";
+import type { Team } from "@/data/team";
 import { getPersonFullName, type Person } from "@/data/types";
 import {
   buildDepartmentFocusGraph,
@@ -26,24 +28,33 @@ import type { PersonOrgNodeData } from "@/lib/organizationTree";
 
 const nodeTypes = {
   person: PersonOrgNode,
+  team: OrgTeamNode,
 } satisfies NodeTypes;
 
 type DepartmentFocusFlowProps = {
   department: Department;
   people: Person[];
   departments: Department[];
+  teams?: Team[];
 };
 
 function DepartmentFocusFlowInner({
   department,
   people,
   departments,
+  teams = [],
 }: DepartmentFocusFlowProps) {
   const router = useRouter();
   const { fitView } = useReactFlow();
   const defaultCollapsed = useMemo(
-    () => getDepartmentFocusDefaultCollapsed(department, people, departments),
-    [department, people, departments],
+    () =>
+      getDepartmentFocusDefaultCollapsed(
+        department,
+        people,
+        departments,
+        teams,
+      ),
+    [department, people, departments, teams],
   );
   const [collapsedOverride, setCollapsedOverride] = useState<Set<string> | null>(
     null,
@@ -56,13 +67,14 @@ function DepartmentFocusFlowInner({
       collapsed,
       people,
       departments,
+      teams,
     );
     const layouted = getLayoutedElements(graph.nodes, graph.edges);
     return {
       ...layouted,
       head: graph.head,
     };
-  }, [department, collapsed, people, departments]);
+  }, [department, collapsed, people, departments, teams]);
 
   useEffect(() => {
     if (nodes.length === 0) return;
@@ -78,6 +90,7 @@ function DepartmentFocusFlowInner({
         department,
         people,
         departments,
+        teams,
       );
       if (!collapsible.has(nodeId)) return;
       setCollapsedOverride((prev) => {
@@ -88,7 +101,7 @@ function DepartmentFocusFlowInner({
         return next;
       });
     },
-    [department, people, departments, defaultCollapsed],
+    [department, people, departments, teams, defaultCollapsed],
   );
 
   const expandAll = useCallback(() => {
@@ -97,9 +110,14 @@ function DepartmentFocusFlowInner({
 
   const collapseAll = useCallback(() => {
     setCollapsedOverride(
-      getDepartmentFocusCollapsibleIds(department, people, departments),
+      getDepartmentFocusCollapsibleIds(
+        department,
+        people,
+        departments,
+        teams,
+      ),
     );
-  }, [department, people, departments]);
+  }, [department, people, departments, teams]);
 
   const openProfile = useCallback(
     (personId: string) => {
@@ -111,13 +129,17 @@ function DepartmentFocusFlowInner({
   const onNodeClick: NodeMouseHandler = useCallback(
     (_event, node: Node) => {
       const kind = (node.data as { kind?: string } | undefined)?.kind;
+      if (kind === "team" || node.type === "team") {
+        toggleExpand(node.id);
+        return;
+      }
       if (kind === "person" || node.type === "person") {
         const data = node.data as PersonOrgNodeData;
         if (!data?.personId) return;
         router.push(`/persone/${data.personId}`);
       }
     },
-    [router],
+    [router, toggleExpand],
   );
 
   const actions = useMemo(

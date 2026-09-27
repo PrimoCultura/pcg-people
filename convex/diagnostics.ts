@@ -78,6 +78,17 @@ export const getOrganizationBundle = query({
       departments,
       districts,
       clinics,
+      teams: (
+        await ctx.db
+          .query("teams")
+          .withIndex("by_active", (q) => q.eq("active", true))
+          .collect()
+      ).sort((a, b) => {
+        const ao = a.order ?? Number.POSITIVE_INFINITY;
+        const bo = b.order ?? Number.POSITIVE_INFINITY;
+        if (ao !== bo) return ao - bo;
+        return a.name.localeCompare(b.name, "it");
+      }),
     };
   },
 });

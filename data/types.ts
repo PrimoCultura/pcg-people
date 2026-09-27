@@ -18,6 +18,10 @@ export type Person = {
   departmentId: string;
   /** Resolved department display name */
   departmentLabel?: string;
+  /** Optional team within the department */
+  teamId?: string;
+  /** Resolved team display name */
+  teamLabel?: string;
   email: string;
   phone: string;
   shortDescription: string;

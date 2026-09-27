@@ -18,6 +18,7 @@ import type * as lib_enums from "../lib/enums.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as people from "../people.js";
 import type * as seed from "../seed.js";
+import type * as teams from "../teams.js";
 
 import type {
   ApiFromModules,
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   "lib/validators": typeof lib_validators;
   people: typeof people;
   seed: typeof seed;
+  teams: typeof teams;
 }>;
 
 /**

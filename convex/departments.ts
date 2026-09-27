@@ -61,15 +61,58 @@ export const getById = query({
       .query("people")
       .withIndex("by_department", (q) => q.eq("departmentId", args.id))
       .collect();
-    const activeMembers = await Promise.all(
-      members
-        .filter((m) => m.active && m._id !== department.headId)
+    const activeMembers = members.filter((m) => m.active);
+    const enrichedMembers = await Promise.all(
+      activeMembers
+        .filter((m) => m._id !== department.headId)
         .map((m) => enrichPerson(ctx, m)),
     );
+
+    const teams = await ctx.db
+      .query("teams")
+      .withIndex("by_department", (q) => q.eq("departmentId", args.id))
+      .collect();
+    const activeTeams = teams
+      .filter((t) => t.active)
+      .sort((a, b) => {
+        const ao = a.order ?? Number.POSITIVE_INFINITY;
+        const bo = b.order ?? Number.POSITIVE_INFINITY;
+        if (ao !== bo) return ao - bo;
+        return a.name.localeCompare(b.name, "it");
+      });
+
+    const teamsWithMeta = await Promise.all(
+      activeTeams.map(async (team) => {
+        const teamHead = team.headId ? await ctx.db.get(team.headId) : null;
+        const teamMembers = activeMembers.filter((m) => m.teamId === team._id);
+        return {
+          ...team,
+          head:
+            teamHead && teamHead.active
+              ? await enrichPerson(ctx, teamHead)
+              : null,
+          memberCount: teamMembers.length,
+          members: await Promise.all(
+            teamMembers.map((m) => enrichPerson(ctx, m)),
+          ),
+        };
+      }),
+    );
+
+    const unassignedMembers = await Promise.all(
+      activeMembers
+        .filter(
+          (m) => m._id !== department.headId && !m.teamId,
+        )
+        .map((m) => enrichPerson(ctx, m)),
+    );
+
     return {
       ...department,
       head: head && head.active ? await enrichPerson(ctx, head) : null,
-      members: activeMembers,
+      members: enrichedMembers,
+      teams: teamsWithMeta,
+      unassignedMembers,
     };
   },
 });

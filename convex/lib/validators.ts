@@ -26,6 +26,48 @@ export async function requireDepartment(
   return department;
 }
 
+export async function requireTeam(
+  ctx: Ctx,
+  id: Id<"teams">,
+): Promise<Doc<"teams">> {
+  const team = await ctx.db.get(id);
+  if (!team) userError("Team non trovato.");
+  return team;
+}
+
+/**
+ * Ensures teamId (if set) exists, is active when required, and belongs to
+ * the person's department. Does not mutate managerId.
+ */
+export async function assertTeamAssignment(
+  ctx: Ctx,
+  departmentId: Id<"departments">,
+  teamId: Id<"teams"> | undefined,
+  opts?: { requireActive?: boolean },
+) {
+  if (!teamId) return;
+  const team = await requireTeam(ctx, teamId);
+  if (team.departmentId !== departmentId) {
+    userError(
+      "Il Team selezionato non appartiene al dipartimento della persona.",
+    );
+  }
+  if (opts?.requireActive !== false && !team.active) {
+    userError("Il Team selezionato non è attivo.");
+  }
+}
+
+export async function assertTeamHead(
+  ctx: Ctx,
+  headId: Id<"people"> | undefined,
+) {
+  if (!headId) return;
+  const head = await requirePerson(ctx, headId);
+  if (!head.active) {
+    userError("Il responsabile del Team deve essere una persona attiva.");
+  }
+}
+
 export async function requireDistrict(
   ctx: Ctx,
   id: Id<"districts">,

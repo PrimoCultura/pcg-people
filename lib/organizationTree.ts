@@ -62,15 +62,30 @@ export type OrgDepartmentNodeData = {
   canCollapse: boolean;
 };
 
+export type OrgTeamNodeData = {
+  kind: "team";
+  label: string;
+  teamId: string;
+  departmentId: string;
+  /** Display-only head label (e.g. when head coincides with dept head). */
+  headLabel?: string | null;
+  memberCount: number;
+  hasChildren: boolean;
+  isExpanded: boolean;
+  canCollapse: boolean;
+};
+
 export type OrgPersonNode = Node<PersonOrgNodeData, "person">;
 export type OrgLabelNode = Node<OrgLabelNodeData, "label">;
 export type OrgHubNode = Node<OrgHubNodeData, "hub">;
 export type OrgDepartmentNode = Node<OrgDepartmentNodeData, "department">;
+export type OrgTeamNode = Node<OrgTeamNodeData, "team">;
 export type OrgChartNode =
   | OrgPersonNode
   | OrgLabelNode
   | OrgHubNode
-  | OrgDepartmentNode;
+  | OrgDepartmentNode
+  | OrgTeamNode;
 
 export type ClinicLike = {
   id: string;
@@ -207,6 +222,10 @@ export function getChildMapForMode(
 
 export function virtualDepartmentNodeId(departmentId: string): string {
   return `virtual-department-${departmentId}`;
+}
+
+export function virtualTeamNodeId(teamId: string): string {
+  return `virtual-team-${teamId}`;
 }
 
 export function staffHubNodeId(parentId: string): string {

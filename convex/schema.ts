@@ -8,6 +8,8 @@ export default defineSchema({
     lastName: v.string(),
     role: v.string(),
     departmentId: v.id("departments"),
+    /** Optional team within the person's department. Absent = no team. */
+    teamId: v.optional(v.id("teams")),
     managerId: v.optional(v.id("people")),
     /** Absent = line (backward compatible). */
     reportingType: v.optional(reportingType),
@@ -29,6 +31,7 @@ export default defineSchema({
   })
     .index("by_active", ["active"])
     .index("by_department", ["departmentId"])
+    .index("by_team", ["teamId"])
     .index("by_manager", ["managerId"])
     .index("by_type", ["type"])
     .index("by_district", ["districtId"])
@@ -53,6 +56,26 @@ export default defineSchema({
     .index("by_slug", ["slug"])
     .index("by_active", ["active"])
     .index("by_order", ["order"]),
+
+  /**
+   * Organizational team within a department.
+   * Slug is unique per department (not globally).
+   * headId is the team lead — independent from people.managerId.
+   */
+  teams: defineTable({
+    name: v.string(),
+    slug: v.string(),
+    departmentId: v.id("departments"),
+    headId: v.optional(v.id("people")),
+    description: v.optional(v.string()),
+    order: v.optional(v.number()),
+    active: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_department", ["departmentId"])
+    .index("by_department_slug", ["departmentId", "slug"])
+    .index("by_active", ["active"]),
 
   districts: defineTable({
     name: v.string(),

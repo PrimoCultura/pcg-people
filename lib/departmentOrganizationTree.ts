@@ -5,15 +5,19 @@ import {
 } from "@/data/department";
 import { mockDepartments } from "@/data/mockDepartments";
 import { mockPeople } from "@/data/mockPeople";
+import type { Team } from "@/data/team";
 import {
+  getPersonFullName,
   getReportingType,
   type Person,
 } from "@/data/types";
 import { getPersonDepartmentLabel } from "@/lib/personLabels";
 import {
   virtualDepartmentNodeId,
+  virtualTeamNodeId,
   type OrgChartNode,
   type OrgDepartmentNodeData,
+  type OrgTeamNodeData,
   type PersonOrgNodeData,
 } from "@/lib/organizationTree";
 
@@ -103,6 +107,29 @@ function departmentNodeData(
     hasChildren: opts?.hasChildren ?? false,
     isExpanded: opts?.isExpanded ?? false,
     canCollapse: opts?.canCollapse ?? false,
+  };
+}
+
+function teamNodeData(
+  team: Team,
+  opts: {
+    headLabel?: string | null;
+    memberCount: number;
+    canCollapse: boolean;
+    isExpanded: boolean;
+    hasChildren: boolean;
+  },
+): OrgTeamNodeData {
+  return {
+    kind: "team",
+    label: team.name,
+    teamId: team.id,
+    departmentId: team.departmentId,
+    headLabel: opts.headLabel,
+    memberCount: opts.memberCount,
+    hasChildren: opts.hasChildren,
+    isExpanded: opts.isExpanded,
+    canCollapse: opts.canCollapse,
   };
 }
 
@@ -206,6 +233,25 @@ function buildDeptChildMap(
   return map;
 }
 
+function sortPeople(list: Person[]) {
+  return [...list].sort((a, b) =>
+    `${a.lastName} ${a.firstName}`.localeCompare(
+      `${b.lastName} ${b.firstName}`,
+      "it",
+    ),
+  );
+}
+
+function teamsForDepartment(departmentId: string, teams: Team[]): Team[] {
+  return [...teams]
+    .filter((t) => t.departmentId === departmentId)
+    .sort(
+      (a, b) =>
+        (a.order ?? 999) - (b.order ?? 999) ||
+        a.name.localeCompare(b.name, "it"),
+    );
+}
+
 /** People belonging to a department focus (head included even if primary dept differs). */
 export function getDepartmentFocusMembers(
   department: Department,
@@ -220,9 +266,6 @@ export function getDepartmentFocusMembers(
     if (head) result.set(head.id, head);
   }
 
-  // CEO focus: include the head's personal staff (e.g. Chief of Staff), but not
-  // people who belong to another staff department headed by the same person
-  // (e.g. Cultura members stay in the Cultura focus).
   if (isCeoDepartment(department) && department.headId) {
     const staffDeptIds = new Set(
       allDepartments
@@ -251,12 +294,22 @@ export function getDepartmentFocusDefaultCollapsed(
   department: Department,
   people: Person[] = mockPeople,
   allDepartments: Department[] = mockDepartments,
+  teams: Team[] = [],
 ): Set<string> {
+  const deptTeams = teamsForDepartment(department.id, teams);
+  const collapsed = new Set<string>();
+
+  if (deptTeams.length > 0) {
+    for (const team of deptTeams) {
+      collapsed.add(virtualTeamNodeId(team.id));
+    }
+    return collapsed;
+  }
+
   const members = getDepartmentFocusMembers(department, people, allDepartments);
   const memberIds = new Set(members.map((m) => m.id));
   const childMap = buildDeptChildMap(members, memberIds);
   const headId = department.headId;
-  const collapsed = new Set<string>();
   for (const person of members) {
     if (person.id === headId) continue;
     if ((childMap.get(person.id) ?? []).length > 0) {
@@ -270,12 +323,55 @@ export function getDepartmentFocusCollapsibleIds(
   department: Department,
   people: Person[] = mockPeople,
   allDepartments: Department[] = mockDepartments,
+  teams: Team[] = [],
 ): Set<string> {
+  const deptTeams = teamsForDepartment(department.id, teams);
+  const ids = new Set<string>();
+
+  if (deptTeams.length > 0) {
+    const members = getDepartmentFocusMembers(
+      department,
+      people,
+      allDepartments,
+    );
+    for (const team of deptTeams) {
+      const teamMembers = members.filter((m) => m.teamId === team.id);
+      const showHeadAsPerson =
+        Boolean(team.headId) && team.headId !== department.headId;
+      if (teamMembers.length > 0 || showHeadAsPerson) {
+        ids.add(virtualTeamNodeId(team.id));
+      }
+      const visibleSet = new Set(teamMembers.map((m) => m.id));
+      if (showHeadAsPerson && team.headId) visibleSet.add(team.headId);
+      const childMap = buildDeptChildMap(
+        members.filter((m) => visibleSet.has(m.id)),
+        visibleSet,
+      );
+      for (const [id, children] of childMap) {
+        if (children.length > 0 && id !== team.headId) ids.add(id);
+      }
+    }
+    const unassigned = members.filter(
+      (m) => !m.teamId && m.id !== department.headId,
+    );
+    const unassignedIds = new Set([
+      ...(department.headId ? [department.headId] : []),
+      ...unassigned.map((m) => m.id),
+    ]);
+    const childMap = buildDeptChildMap(
+      members.filter((m) => unassignedIds.has(m.id)),
+      unassignedIds,
+    );
+    for (const [id, children] of childMap) {
+      if (children.length > 0 && id !== department.headId) ids.add(id);
+    }
+    return ids;
+  }
+
   const members = getDepartmentFocusMembers(department, people, allDepartments);
   const memberIds = new Set(members.map((m) => m.id));
   const childMap = buildDeptChildMap(members, memberIds);
   const headId = department.headId;
-  const ids = new Set<string>();
   for (const [id, children] of childMap) {
     if (children.length > 0 && id !== headId) ids.add(id);
   }
@@ -283,26 +379,55 @@ export function getDepartmentFocusCollapsibleIds(
 }
 
 /**
- * Focus chart: department head on top, then only people of that department
- * linked via managerId (with orphans attached to the head for rendering).
+ * Focus chart: department head on top.
+ * When teams exist: team cards under the head (expandable containers),
+ * then internal managerId hierarchy. People without teamId stay under the head.
+ * When no teams: legacy flat managerId tree (backward compatible).
  */
 export function buildDepartmentFocusGraph(
   department: Department,
   collapsed: Set<string>,
   people: Person[] = mockPeople,
   allDepartments: Department[] = mockDepartments,
+  teams: Team[] = [],
 ): { nodes: OrgChartNode[]; edges: Edge[]; head: Person | null } {
   const members = getDepartmentFocusMembers(department, people, allDepartments);
-  const memberIds = new Set(members.map((m) => m.id));
   const byId = new Map(members.map((p) => [p.id, p]));
-  const head = department.headId ? (byId.get(department.headId) ?? null) : null;
+  const allPeopleById = new Map(people.map((p) => [p.id, p]));
+  const head = department.headId
+    ? (byId.get(department.headId) ??
+      allPeopleById.get(department.headId) ??
+      null)
+    : null;
 
   if (!head) {
     return { nodes: [], edges: [], head: null };
   }
 
+  const deptTeams = teamsForDepartment(department.id, teams);
+  if (deptTeams.length === 0) {
+    return buildLegacyDepartmentFocusGraph(head, members, collapsed);
+  }
+
+  return buildTeamAwareDepartmentFocusGraph(
+    department,
+    head,
+    members,
+    deptTeams,
+    collapsed,
+    allPeopleById,
+  );
+}
+
+function buildLegacyDepartmentFocusGraph(
+  head: Person,
+  members: Person[],
+  collapsed: Set<string>,
+): { nodes: OrgChartNode[]; edges: Edge[]; head: Person } {
+  const memberIds = new Set(members.map((m) => m.id));
+  const byId = new Map(members.map((p) => [p.id, p]));
   const childMap = buildDeptChildMap(members, memberIds);
-  // Attach members whose manager is outside the department to the head.
+
   for (const person of members) {
     if (person.id === head.id) continue;
     if (person.managerId && memberIds.has(person.managerId)) continue;
@@ -377,6 +502,213 @@ export function buildDepartmentFocusGraph(
         type: "smoothstep",
         animated: false,
       });
+    }
+  }
+
+  return { nodes, edges, head };
+}
+
+function buildTeamAwareDepartmentFocusGraph(
+  department: Department,
+  head: Person,
+  members: Person[],
+  deptTeams: Team[],
+  collapsed: Set<string>,
+  allPeopleById: Map<string, Person>,
+): { nodes: OrgChartNode[]; edges: Edge[]; head: Person } {
+  const nodes: OrgChartNode[] = [];
+  const edges: Edge[] = [];
+  const edgeIds = new Set<string>();
+  const personNodesAdded = new Set<string>();
+
+  const pushEdge = (source: string, target: string) => {
+    const id = `e-${source}-${target}`;
+    if (edgeIds.has(id)) return;
+    edgeIds.add(id);
+    edges.push({
+      id,
+      source,
+      target,
+      type: "smoothstep",
+      animated: false,
+    });
+  };
+
+  const pushPersonNode = (
+    person: Person,
+    opts: { hasChildren: boolean; canCollapse: boolean; isExpanded: boolean },
+  ) => {
+    if (personNodesAdded.has(person.id)) return;
+    personNodesAdded.add(person.id);
+    nodes.push({
+      id: person.id,
+      type: "person",
+      position: { x: 0, y: 0 },
+      style: { cursor: "pointer", pointerEvents: "auto" },
+      data: {
+        ...personNodeData(person),
+        ...opts,
+      },
+    });
+  };
+
+  pushPersonNode(head, {
+    hasChildren: true,
+    canCollapse: false,
+    isExpanded: true,
+  });
+
+  for (const team of deptTeams) {
+    const teamNodeId = virtualTeamNodeId(team.id);
+    const teamMembers = members.filter((m) => m.teamId === team.id);
+    const headPerson = team.headId
+      ? (allPeopleById.get(team.headId) ?? null)
+      : null;
+    const headIsDeptHead = Boolean(team.headId && team.headId === head.id);
+    const showHeadAsPerson = Boolean(headPerson && !headIsDeptHead);
+
+    const displayMembers = teamMembers.filter((m) => m.id !== head.id);
+    const subtreePeople = new Map(
+      displayMembers.map((p) => [p.id, p] as const),
+    );
+    if (showHeadAsPerson && headPerson && !subtreePeople.has(headPerson.id)) {
+      subtreePeople.set(headPerson.id, headPerson);
+    }
+
+    const subtreeList = [...subtreePeople.values()];
+    const subtreeIds = new Set(subtreeList.map((p) => p.id));
+    const childMap = buildDeptChildMap(subtreeList, subtreeIds);
+
+    let roots = subtreeList.filter(
+      (person) => !(person.managerId && subtreeIds.has(person.managerId)),
+    );
+
+    if (showHeadAsPerson && headPerson && subtreeIds.has(headPerson.id)) {
+      const withoutHead = roots.filter((p) => p.id !== headPerson.id);
+      for (const orphan of withoutHead) {
+        const list = childMap.get(headPerson.id) ?? [];
+        if (!list.some((p) => p.id === orphan.id)) {
+          list.push(orphan);
+          childMap.set(headPerson.id, list);
+        }
+      }
+      for (const [key, list] of childMap) {
+        childMap.set(key, sortPeople(list));
+      }
+      roots = [headPerson];
+    } else {
+      roots = sortPeople(roots);
+    }
+
+    const hasChildren = subtreeList.length > 0;
+    const isExpanded = hasChildren ? !collapsed.has(teamNodeId) : false;
+    const headLabel = headPerson ? getPersonFullName(headPerson) : null;
+
+    nodes.push({
+      id: teamNodeId,
+      type: "team",
+      position: { x: 0, y: 0 },
+      style: { cursor: "pointer", pointerEvents: "auto" },
+      data: teamNodeData(team, {
+        headLabel,
+        memberCount: teamMembers.length,
+        hasChildren,
+        isExpanded,
+        canCollapse: hasChildren,
+      }),
+    });
+    pushEdge(head.id, teamNodeId);
+
+    if (!isExpanded || !hasChildren) continue;
+
+    const visible = new Set<string>();
+    const visit = (person: Person) => {
+      if (visible.has(person.id)) return;
+      visible.add(person.id);
+      if (collapsed.has(person.id)) return;
+      for (const child of childMap.get(person.id) ?? []) {
+        visit(child);
+      }
+    };
+    for (const root of roots) visit(root);
+
+    for (const id of visible) {
+      const person = subtreePeople.get(id);
+      if (!person) continue;
+      const children = (childMap.get(id) ?? []).filter((c) => c.id !== id);
+      const hasPersonChildren = children.length > 0;
+      pushPersonNode(person, {
+        hasChildren: hasPersonChildren,
+        canCollapse: hasPersonChildren,
+        isExpanded: hasPersonChildren ? !collapsed.has(person.id) : false,
+      });
+    }
+
+    for (const root of roots) {
+      if (!visible.has(root.id)) continue;
+      pushEdge(teamNodeId, root.id);
+    }
+    for (const managerId of visible) {
+      if (collapsed.has(managerId)) continue;
+      for (const child of childMap.get(managerId) ?? []) {
+        if (!visible.has(child.id)) continue;
+        pushEdge(managerId, child.id);
+      }
+    }
+  }
+
+  const unassigned = sortPeople(
+    members.filter((m) => !m.teamId && m.id !== head.id),
+  );
+
+  if (unassigned.length > 0) {
+    const unassignedIds = new Set([head.id, ...unassigned.map((u) => u.id)]);
+    const unassignedPeople = [head, ...unassigned];
+    const childMap = buildDeptChildMap(unassignedPeople, unassignedIds);
+    for (const person of unassigned) {
+      if (person.managerId && unassignedIds.has(person.managerId)) continue;
+      const list = childMap.get(head.id) ?? [];
+      if (!list.some((p) => p.id === person.id)) {
+        list.push(person);
+        childMap.set(head.id, list);
+      }
+    }
+    for (const [key, list] of childMap) {
+      childMap.set(key, sortPeople(list));
+    }
+
+    const visible = new Set<string>([head.id]);
+    const visit = (person: Person) => {
+      if (person.id !== head.id) {
+        if (visible.has(person.id)) return;
+        visible.add(person.id);
+      }
+      if (collapsed.has(person.id) && person.id !== head.id) return;
+      for (const child of childMap.get(person.id) ?? []) {
+        visit(child);
+      }
+    };
+    visit(head);
+
+    for (const id of visible) {
+      if (id === head.id) continue;
+      const person = unassigned.find((u) => u.id === id);
+      if (!person) continue;
+      const children = (childMap.get(id) ?? []).filter((c) => c.id !== id);
+      const hasPersonChildren = children.length > 0;
+      pushPersonNode(person, {
+        hasChildren: hasPersonChildren,
+        canCollapse: hasPersonChildren,
+        isExpanded: hasPersonChildren ? !collapsed.has(person.id) : false,
+      });
+    }
+
+    for (const managerId of visible) {
+      if (collapsed.has(managerId) && managerId !== head.id) continue;
+      for (const child of childMap.get(managerId) ?? []) {
+        if (!visible.has(child.id) || child.id === head.id) continue;
+        pushEdge(managerId, child.id);
+      }
     }
   }
 

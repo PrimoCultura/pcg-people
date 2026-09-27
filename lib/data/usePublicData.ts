@@ -7,6 +7,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { Clinic } from "@/data/clinic";
 import type { Department } from "@/data/department";
 import type { District } from "@/data/district";
+import type { Team } from "@/data/team";
 import {
   getDepartmentById,
   getDepartmentHead,
@@ -37,10 +38,12 @@ import {
   mapConvexDepartment,
   mapConvexDistrict,
   mapConvexPerson,
+  mapConvexTeam,
   type ConvexClinicDoc,
   type ConvexDepartmentDoc,
   type ConvexDistrictDoc,
   type ConvexPersonDoc,
+  type ConvexTeamDoc,
 } from "@/lib/mappers";
 
 export type DataStatus = "loading" | "ready" | "unavailable";
@@ -70,6 +73,7 @@ export function getMockOrganizationBundle() {
     departments: getDepartmentsWithMembers(),
     districts: getDistricts(),
     clinics: mockClinics as Clinic[],
+    teams: [] as Team[],
   };
 }
 
@@ -153,6 +157,7 @@ export function useConvexOrganizationBundle() {
         departments: [] as Department[],
         districts: [] as District[],
         clinics: [] as Clinic[],
+        teams: [] as Team[],
       };
     }
     return {
@@ -163,6 +168,7 @@ export function useConvexOrganizationBundle() {
       ),
       districts: (raw.districts as ConvexDistrictDoc[]).map(mapConvexDistrict),
       clinics: (raw.clinics as ConvexClinicDoc[]).map(mapConvexClinic),
+      teams: ((raw.teams ?? []) as ConvexTeamDoc[]).map(mapConvexTeam),
     };
   }, [raw]);
 }
@@ -247,11 +253,42 @@ export function useConvexDepartmentDetail(id: string) {
   return useMemo(() => {
     if (raw === undefined) return { status: "loading" as const };
     if (raw === null) return { status: "unavailable" as const };
+
+    const teams = (
+      (raw.teams ?? []) as Array<{
+        _id: Id<"teams">;
+        name: string;
+        slug: string;
+        departmentId: Id<"departments">;
+        headId?: Id<"people">;
+        description?: string;
+        order?: number;
+        head: ConvexPersonDoc | null;
+        memberCount: number;
+        members: ConvexPersonDoc[];
+      }>
+    ).map((t) => ({
+      id: t._id,
+      name: t.name,
+      slug: t.slug,
+      departmentId: t.departmentId,
+      headId: t.headId,
+      description: t.description,
+      order: t.order,
+      head: t.head ? mapConvexPerson(t.head) : null,
+      memberCount: t.memberCount,
+      members: (t.members ?? []).map(mapConvexPerson),
+    }));
+
     return {
       status: "ready" as const,
       department: mapConvexDepartment(raw as ConvexDepartmentDoc),
       head: raw.head ? mapConvexPerson(raw.head as ConvexPersonDoc) : null,
       members: ((raw.members ?? []) as ConvexPersonDoc[]).map(mapConvexPerson),
+      teams,
+      unassignedMembers: (
+        (raw.unassignedMembers ?? []) as ConvexPersonDoc[]
+      ).map(mapConvexPerson),
     };
   }, [raw]);
 }

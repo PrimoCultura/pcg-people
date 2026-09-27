@@ -24,6 +24,7 @@ type FormState = {
   lastName: string;
   role: string;
   departmentId: string;
+  teamId: string;
   managerId: string;
   reportingType: ReportingType;
   type: PersonArea;
@@ -44,6 +45,7 @@ const emptyForm: FormState = {
   lastName: "",
   role: "",
   departmentId: "",
+  teamId: "",
   managerId: "",
   reportingType: "line",
   type: "hq",
@@ -89,6 +91,7 @@ export function PersonForm({ personId }: PersonFormProps) {
         lastName: doc.lastName,
         role: doc.role,
         departmentId: doc.departmentId,
+        teamId: doc.teamId ?? "",
         managerId: doc.managerId ?? "",
         reportingType: doc.reportingType === "staff" ? "staff" : "line",
         type: doc.type,
@@ -109,6 +112,21 @@ export function PersonForm({ personId }: PersonFormProps) {
 
   const state = form ?? initialized;
 
+  const departmentIdForTeams =
+    state?.departmentId ||
+    (existing as ConvexPersonDoc | null | undefined)?.departmentId ||
+    "";
+
+  const teamsForDepartment = useQuery(
+    api.teams.listByDepartment,
+    departmentIdForTeams
+      ? {
+          departmentId: departmentIdForTeams as Id<"departments">,
+          activeOnly: true,
+        }
+      : "skip",
+  );
+
   const managerOptions = useMemo(() => {
     if (!people) return [];
     return (people as ConvexPersonDoc[])
@@ -126,11 +144,32 @@ export function PersonForm({ personId }: PersonFormProps) {
     return <p className="text-sm text-pcg-text-secondary">Caricamento…</p>;
   }
 
+  const teamOptions = teamsForDepartment ?? [];
+
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm({ ...state, [key]: value });
     setMessage(null);
     setError(null);
   };
+
+  function onDepartmentChange(nextDepartmentId: string) {
+    if (!state) return;
+    const current = state;
+    const currentTeamId = current.teamId;
+    if (!currentTeamId) {
+      setForm({ ...current, departmentId: nextDepartmentId, teamId: "" });
+      setMessage(null);
+      setError(null);
+      return;
+    }
+    const confirmed = window.confirm(
+      "Cambiando dipartimento, il Team assegnato verrà azzerato se non è compatibile. Continuare?",
+    );
+    if (!confirmed) return;
+    setForm({ ...current, departmentId: nextDepartmentId, teamId: "" });
+    setMessage(null);
+    setError(null);
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -144,6 +183,9 @@ export function PersonForm({ personId }: PersonFormProps) {
         lastName: state.lastName.trim(),
         role: state.role.trim(),
         departmentId: state.departmentId as Id<"departments">,
+        teamId: state.teamId
+          ? (state.teamId as Id<"teams">)
+          : undefined,
         managerId: state.managerId
           ? (state.managerId as Id<"people">)
           : undefined,
@@ -261,13 +303,28 @@ export function PersonForm({ personId }: PersonFormProps) {
           <select
             required
             value={state.departmentId}
-            onChange={(e) => set("departmentId", e.target.value)}
+            onChange={(e) => onDepartmentChange(e.target.value)}
             className={inputClass}
           >
             <option value="">Seleziona…</option>
             {departments.map((d) => (
               <option key={d._id} value={d._id}>
                 {d.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Team">
+          <select
+            value={state.teamId}
+            onChange={(e) => set("teamId", e.target.value)}
+            className={inputClass}
+            disabled={!state.departmentId}
+          >
+            <option value="">Nessun Team</option>
+            {teamOptions.map((t) => (
+              <option key={t._id} value={t._id}>
+                {t.name}
               </option>
             ))}
           </select>

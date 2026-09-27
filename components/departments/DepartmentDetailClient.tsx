@@ -6,7 +6,13 @@ import { DepartmentContactFor } from "@/components/departments/DepartmentContact
 import { DepartmentHeader } from "@/components/departments/DepartmentHeader";
 import { DepartmentLeader } from "@/components/departments/DepartmentLeader";
 import { DepartmentTeam } from "@/components/departments/DepartmentTeam";
+import {
+  DepartmentTeamsSection,
+  type DepartmentTeamGroup,
+} from "@/components/departments/DepartmentTeamsSection";
 import { isConvexConfigured } from "@/components/providers/ConvexClientProvider";
+import type { Department } from "@/data/department";
+import type { Person } from "@/data/types";
 import {
   getMockDepartmentDetail,
   useConvexDepartmentDetail,
@@ -14,6 +20,14 @@ import {
 
 type DepartmentDetailClientProps = {
   id: string;
+};
+
+type DepartmentDetailData = {
+  department: Department;
+  head: Person | null;
+  members: Person[];
+  teams?: DepartmentTeamGroup[];
+  unassignedMembers?: Person[];
 };
 
 export function DepartmentDetailClient({ id }: DepartmentDetailClientProps) {
@@ -42,7 +56,14 @@ function DepartmentDetailView({
   department,
   head,
   members,
-}: NonNullable<ReturnType<typeof getMockDepartmentDetail>>) {
+  teams = [],
+  unassignedMembers,
+}: DepartmentDetailData) {
+  const hasTeams = teams.length > 0;
+  const otherPeople =
+    unassignedMembers ??
+    (hasTeams ? members.filter((m) => !m.teamId) : members);
+
   return (
     <>
       <nav
@@ -84,7 +105,15 @@ function DepartmentDetailView({
           </section>
 
           <DepartmentContactFor items={department.contactFor} />
-          <DepartmentTeam members={members} />
+
+          {hasTeams ? (
+            <DepartmentTeamsSection
+              teams={teams}
+              unassignedMembers={otherPeople}
+            />
+          ) : (
+            <DepartmentTeam members={members} />
+          )}
         </div>
 
         <aside className="lg:border-l lg:border-pcg-border lg:pl-8">

@@ -3,6 +3,7 @@ import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
   assertManagerAssignment,
+  assertTeamAssignment,
   now,
   requireDepartment,
   requirePerson,
@@ -21,7 +22,9 @@ async function photoUrlFor(
 export async function enrichPerson(
   ctx: {
     db: {
-      get: <TableName extends "departments" | "people" | "districts">(
+      get: <
+        TableName extends "departments" | "people" | "districts" | "teams",
+      >(
         id: Id<TableName>,
       ) => Promise<Doc<TableName> | null>;
     };
@@ -30,6 +33,7 @@ export async function enrichPerson(
   person: Doc<"people">,
 ) {
   const department = await ctx.db.get(person.departmentId);
+  const team = person.teamId ? await ctx.db.get(person.teamId) : null;
   const manager = person.managerId
     ? await ctx.db.get(person.managerId)
     : null;
@@ -41,6 +45,7 @@ export async function enrichPerson(
   return {
     ...person,
     departmentName: department?.name ?? "",
+    teamName: team?.name ?? null,
     managerName: manager
       ? `${manager.firstName} ${manager.lastName}`
       : null,
@@ -118,6 +123,7 @@ const personFields = {
   lastName: v.string(),
   role: v.string(),
   departmentId: v.id("departments"),
+  teamId: v.optional(v.id("teams")),
   managerId: v.optional(v.id("people")),
   reportingType: v.optional(reportingType),
   type: personType,
@@ -139,6 +145,7 @@ export const create = mutation({
   handler: async (ctx, args) => {
     await requireDepartment(ctx, args.departmentId);
     await assertManagerAssignment(ctx, null, args.managerId);
+    await assertTeamAssignment(ctx, args.departmentId, args.teamId);
 
     if (args.districtId) {
       const district = await ctx.db.get(args.districtId);
@@ -171,14 +178,17 @@ export const update = mutation({
     await requirePerson(ctx, id);
     await requireDepartment(ctx, fields.departmentId);
     await assertManagerAssignment(ctx, id, fields.managerId);
+    await assertTeamAssignment(ctx, fields.departmentId, fields.teamId);
 
     if (fields.districtId) {
       const district = await ctx.db.get(fields.districtId);
       if (!district) userError("Distretto non trovato.");
     }
 
+    // Explicitly clear teamId when omitted (optional fields don't unset otherwise).
     await ctx.db.patch(id, {
       ...fields,
+      teamId: fields.teamId,
       updatedAt: now(),
     });
   },

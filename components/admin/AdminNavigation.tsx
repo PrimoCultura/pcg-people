@@ -11,6 +11,7 @@ const LINKS: Array<{
   { href: "/admin", label: "Dashboard", exact: true },
   { href: "/admin/persone", label: "Persone" },
   { href: "/admin/dipartimenti", label: "Dipartimenti" },
+  { href: "/admin/team", label: "Team" },
   { href: "/admin/distretti", label: "Distretti" },
   { href: "/admin/cliniche", label: "Cliniche" },
 ];

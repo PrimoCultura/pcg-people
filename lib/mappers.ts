@@ -13,6 +13,7 @@ export type ConvexPersonDoc = {
   lastName: string;
   role: string;
   departmentId: Id<"departments">;
+  teamId?: Id<"teams">;
   managerId?: Id<"people">;
   reportingType?: ReportingType;
   type: PersonArea;
@@ -28,6 +29,7 @@ export type ConvexPersonDoc = {
   active: boolean;
   isOrgRoot?: boolean;
   departmentName: string;
+  teamName?: string | null;
   managerName: string | null;
   managerRole: string | null;
   districtName: string | null;
@@ -72,6 +74,22 @@ export type ConvexClinicDoc = {
   order?: number;
 };
 
+export type ConvexTeamDoc = {
+  _id: Id<"teams">;
+  name: string;
+  slug: string;
+  departmentId: Id<"departments">;
+  headId?: Id<"people">;
+  description?: string;
+  order?: number;
+  active: boolean;
+  departmentName?: string;
+  headName?: string | null;
+  headRole?: string | null;
+  headDepartmentId?: Id<"departments"> | null;
+  activeMemberCount?: number;
+};
+
 export function mapConvexPerson(doc: ConvexPersonDoc): Person {
   return {
     id: doc._id,
@@ -80,6 +98,8 @@ export function mapConvexPerson(doc: ConvexPersonDoc): Person {
     role: doc.role,
     departmentId: doc.departmentId,
     departmentLabel: doc.departmentName,
+    teamId: doc.teamId,
+    teamLabel: doc.teamName ?? undefined,
     email: doc.email,
     phone: doc.phone ?? "",
     shortDescription: doc.shortDescription ?? "",
@@ -94,6 +114,22 @@ export function mapConvexPerson(doc: ConvexPersonDoc): Person {
     districtLabel: doc.districtName ?? undefined,
     networkRole: doc.networkRole,
     isOrgRoot: doc.isOrgRoot,
+  };
+}
+
+export function mapConvexTeam(doc: ConvexTeamDoc) {
+  return {
+    id: doc._id,
+    name: doc.name,
+    slug: doc.slug,
+    departmentId: doc.departmentId,
+    headId: doc.headId,
+    description: doc.description,
+    order: doc.order,
+    departmentLabel: doc.departmentName,
+    headName: doc.headName,
+    headRole: doc.headRole,
+    memberCount: doc.activeMemberCount,
   };
 }
 
