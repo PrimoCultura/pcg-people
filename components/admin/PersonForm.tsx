@@ -80,6 +80,7 @@ export function PersonForm({ personId }: PersonFormProps) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [managerQuery, setManagerQuery] = useState("");
 
   const initialized = useMemo(() => {
     if (form) return form;
@@ -133,6 +134,16 @@ export function PersonForm({ personId }: PersonFormProps) {
       .filter((p) => p.active && (!personId || p._id !== personId))
       .map((p) => mapConvexPerson(p));
   }, [people, personId]);
+
+  const filteredManagerOptions = useMemo(() => {
+    const q = managerQuery.trim().toLowerCase();
+    if (!q) return managerOptions;
+    return managerOptions.filter((p) => {
+      const haystack =
+        `${getPersonFullName(p)} ${p.role} ${p.departmentLabel ?? ""}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [managerOptions, managerQuery]);
 
   if (personId && existing === undefined) {
     return <p className="text-sm text-pcg-text-secondary">Caricamento…</p>;
@@ -329,20 +340,51 @@ export function PersonForm({ personId }: PersonFormProps) {
             ))}
           </select>
         </Field>
-        <Field label="Responsabile diretto">
-          <select
-            value={state.managerId}
-            onChange={(e) => set("managerId", e.target.value)}
-            className={inputClass}
-          >
-            <option value="">Nessuno</option>
-            {managerOptions.map((p) => (
-              <option key={p.id} value={p.id}>
-                {getPersonFullName(p)} — {p.role}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <div>
+          <Field label="Responsabile diretto">
+            <input
+              type="search"
+              value={managerQuery}
+              onChange={(e) => setManagerQuery(e.target.value)}
+              placeholder="Filtra per nome, ruolo o dipartimento…"
+              className={inputClass}
+              aria-label="Filtra responsabile diretto"
+            />
+            <select
+              value={state.managerId}
+              onChange={(e) => set("managerId", e.target.value)}
+              className={inputClass}
+            >
+              <option value="">Nessuno</option>
+              {state.managerId &&
+              !filteredManagerOptions.some((p) => p.id === state.managerId)
+                ? (() => {
+                    const selected = managerOptions.find(
+                      (p) => p.id === state.managerId,
+                    );
+                    return selected ? (
+                      <option key={selected.id} value={selected.id}>
+                        {getPersonFullName(selected)} — {selected.role}
+                      </option>
+                    ) : null;
+                  })()
+                : null}
+              {filteredManagerOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {getPersonFullName(p)} — {p.role}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {managerQuery.trim() ? (
+            <p className="mt-1 text-xs text-pcg-text-muted">
+              {filteredManagerOptions.length}{" "}
+              {filteredManagerOptions.length === 1
+                ? "risultato"
+                : "risultati"}
+            </p>
+          ) : null}
+        </div>
         {state.managerId ? (
           <div>
             <Field label="Collocazione organizzativa">
